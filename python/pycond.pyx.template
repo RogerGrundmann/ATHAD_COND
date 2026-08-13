@@ -1,7 +1,7 @@
 
 import sys
 
-from athad cimport cAtmosphereModel
+from cond cimport cAtmosphereModel
 
 from libcpp cimport bool
 from libcpp.string cimport string

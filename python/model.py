@@ -7,7 +7,7 @@
 # actually ran the ocean rather than the atmosphere. None of that applies: ATHAD has no
 # hydrosphere, no bathymetry and no time slices.
 
-from pyathad import Atmosphere
+from pycond import Atmosphere
 
 
 class Model(object):
@@ -16,11 +16,11 @@ class Model(object):
     """
     def __init__(self):
         self.atm = Atmosphere()
-        self.config_athad_xml = "config_athad.xml"
+        self.config_cond_xml = "config_cond.xml"
 
     def print_config(self):
         print("\n\n\n\n   ATHAD — Atmosphere of the Earth in the Hadean Eon")
-        print("\n\n   configuration file name is                    ", self.config_athad_xml)
+        print("\n\n   configuration file name is                    ", self.config_cond_xml)
         print("   config path is                                ", self.atm.config_xml_path.decode('utf-8'))
         print("   output path for results is                    ", self.atm.output_path.decode('utf-8'))
 

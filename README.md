@@ -1,17 +1,27 @@
-# ATHAD
+# ATHAD_COND
 
-**Atmosphere of the Earth in the Hadean Eon.**
+**The Hadean atmosphere after condensation.**
 
-An atmospheric general-circulation model of the Earth at ~4.4 Ga: a finite-difference
-Navier–Stokes solver on a spherical shell with RK4 time integration and vertical
-coordinate stretching, applied to a ~250 bar, water-vapour-dominated atmosphere over a
-molten or quenching surface with no topography.
+An atmospheric general-circulation model of the epoch that follows
+[ATHAD](https://github.com/RogerGrundmann/ATHAD): the magma ocean has quenched, the steam
+atmosphere has rained out into a liquid ocean, and what remains above it is a
+CO₂-dominated atmosphere of **27–100 bar over a 230–250 °C sea**. Same solver — a
+finite-difference Navier–Stokes solver on a spherical shell with RK4 time integration and
+vertical coordinate stretching — applied to the opposite thermodynamic regime.
 
-ATHAD is the atmosphere half of [ATOM_Precipitation](https://github.com/RogerGrundmann/ATOM_Precipitation)
-(forked at `1e3f319`) re-based onto Hadean conditions. It keeps that model's turbulence
-closures (k-ε, k-ω, k-ω SST), saturation adjustment, Zero/One/Two/Three-Category ice
-schemes, moist convection and multi-layer radiation, and replaces everything that was
-calibrated to a 1 bar, 288 K, N₂/O₂ Earth.
+ATHAD_COND is forked from ATHAD at `29ca2f9`, **carrying its full history**, so fixes
+cherry-pick in both directions. ATHAD in turn is the atmosphere half of
+[ATOM_Precipitation](https://github.com/RogerGrundmann/ATOM_Precipitation) (forked at
+`1e3f319`).
+
+**Where it differs from ATHAD, in one sentence:** ATHAD's water is supercritical from the
+ground to ~177 km and *nothing condenses*; here water is subcritical everywhere and
+condensation is live from the sea surface up, so the code paths ATHAD spent seventeen
+defect-fixes making inert are the ones this model depends on.
+
+> **Status: under construction.** The sections below are inherited from ATHAD and are being
+> replaced phase by phase. Anything not yet marked for ATHAD_COND still describes the
+> 250 bar / 1500 K parent and should not be quoted for this model.
 
 ## Repository layout
 

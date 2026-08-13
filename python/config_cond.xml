@@ -1,5 +1,5 @@
 <!-- THIS FILE IS GENERATED AUTOMATICALLY BY param.py. DO NOT EDIT. --><atom>    <common>
-        <output_path>output_Hadean/</output_path>  <!-- directory where model outputs should be placed(must end in /)(string) -->
+        <output_path>output_Hadean_cond/</output_path>  <!-- directory where model outputs should be placed(must end in /)(string) -->
         <config_xml_path>../python</config_xml_path>  <!-- directory where the configuration files are located(string) -->
         <verbose>false</verbose>  <!-- some description of the module(bool) -->
         <paraview_panorama_vts_flag>true</paraview_panorama_vts_flag>  <!-- flag to control if create paraview panorama(bool) -->

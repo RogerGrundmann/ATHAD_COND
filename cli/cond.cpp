@@ -13,14 +13,14 @@ int main(int argc, char **argv){
         std::cout << "Invalid Command Line Parameter" << std::endl;
         std::cout << std::endl;
         std::cout << "Usage:" << std::endl;
-        std::cout << "\t" << "./had <<XML configuration file path>>" << std::endl;
-        std::cout << "\t" << "For example: ./had config_athad.xml" << std::endl;
+        std::cout << "\t" << "./cond <<XML configuration file path>>" << std::endl;
+        std::cout << "\t" << "For example: ./cond config_cond.xml" << std::endl;
         std::cout << std::endl;
         exit(1);
     }
 
     try{
-        model.LoadConfig(argv[1]);                                      // loading config_athad.xml located at /ATHAD/cli and /ATHAD/python
+        model.LoadConfig(argv[1]);                                      // loading config_cond.xml located at /ATHAD/cli and /ATHAD/python
         model.Run();                                                    // located in cAtmosphereModel.cpp as Run()
     }
 

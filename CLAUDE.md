@@ -1,28 +1,37 @@
-# ATHAD — Atmosphere of the Earth in the Hadean Eon
+# ATHAD_COND — the Hadean atmosphere after condensation
 
-An atmospheric general-circulation model of the Earth as it was in the Hadean
-(~4.4 Ga): a ~250 bar, water-vapour-dominated atmosphere over a molten or quenching
-surface with no known topography.
+An atmospheric general-circulation model of the Earth in the epoch that follows
+[ATHAD](../ATHAD): the magma ocean has quenched, the steam atmosphere has rained out into a
+liquid ocean, and what remains above it is a **CO₂-dominated atmosphere of 27–100 bar over a
+230–250 °C sea**. Nominal run point: **60 bar / 513 K**.
 
-**Forked from `ATOM_Precipitation` @ `1e3f319` (2026-07-28), atmosphere half only.**
-Started 2026-08-11. There is no hydrosphere, no paleogeography, and no time-slice
-series — ATHAD is one epoch.
+**Forked from `ATHAD` @ `29ca2f9` (2026-08-13), carrying its full history**, so fixes
+cherry-pick in both directions (`git remote athad` points at the sibling working copy).
+ATHAD in turn came from `ATOM_Precipitation` @ `1e3f319`. There is still no paleogeography
+and no time-slice series — ATHAD_COND is one epoch. There is now an **ocean**, but as a
+boundary condition only: no prognostic hydrosphere.
+
+**The defining inversion.** ATHAD's central fact is that water is supercritical from the
+ground to ~177 km, so nothing condenses and half the code exists to make condensation a
+genuine no-op. Here water is subcritical everywhere and **condensation is live from the sea
+surface up**. Every path ATHAD made inert is one this model depends on. See "Four
+invariants" below — invariant 2 is inverted, the other three are not.
 
 ## Build, run, test
 
 ```bash
-make had                                        # -> cli/had
+make cond                                       # -> cli/cond
 make test                                       # IAPWS self-test, run this first
-cd python && OMP_NUM_THREADS=8 ../cli/had config_athad.xml
+cd python && OMP_NUM_THREADS=8 ../cli/cond config_cond.xml
 ```
 
-Output lands in `python/output_Hadean/` — the ATOM line's convention
+Output lands in `python/output_Hadean_cond/` — the ATOM line's convention
 (`output_<name>/`, underscore, relative to the run directory; the giant-planet
 siblings hyphenate instead).
 
 `make` regenerates the parameter bindings from `param.py` first. The generated files
-(`atmosphere/*.inc`, `python/atmosphere_pxd.pxi`, `python/pyathad.pyx`,
-`cli/config_athad.xml`, `python/config_athad.xml`) are **tracked on purpose**, so a
+(`atmosphere/*.inc`, `python/atmosphere_pxd.pxi`, `python/pycond.pyx`,
+`cli/config_cond.xml`, `python/config_cond.xml`) are **tracked on purpose**, so a
 `param.py` change shows its full effect in the diff. Regenerate and commit them together.
 
 Removing a parameter from `param.py` deletes a C++ member, so it must be removed

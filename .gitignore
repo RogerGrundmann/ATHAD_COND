@@ -14,11 +14,11 @@ dist/
 python/build/
 
 # Cython generated C++
-python/pyathad.cpp
-python/pyathad.h
+python/pycond.cpp
+python/pycond.h
 
 # NOTE: the param.py-generated bindings (atmosphere/*.inc, python/atmosphere_pxd.pxi,
-# python/pyathad.pyx, cli+python/config_athad.xml) are deliberately TRACKED, as in the
+# python/pycond.pyx, cli+python/config_cond.xml) are deliberately TRACKED, as in the
 # parent repo — a param.py change then shows its full effect in the diff.
 
 # Simulation output data
@@ -29,7 +29,7 @@ atm_log.txt
 atom_log.txt
 
 # Executables
-cli/had
+cli/cond
 test/rad_selftest
 
 # Reference papers (copyright)

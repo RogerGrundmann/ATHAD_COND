@@ -13,10 +13,10 @@ def main():
         'common': [
             # Relative to the directory the run is launched from. The ATOM line's convention
             # is to run from python/ and write to python/output_<name>/ — ATOM itself uses
-            # output_ATOM/ — so a default of output_Hadean/ lands in python/output_Hadean.
-            # (The giant-planet siblings hyphenate, output-Uranus/, but ATHAD is from the
-            # ATOM line and follows it.)
-            ('output_path', 'directory where model outputs should be placed(must end in /)', 'string', 'output_Hadean/'),
+            # output_ATOM/ — so a default of output_Hadean_cond/ lands in
+            # python/output_Hadean_cond. (The giant-planet siblings hyphenate,
+            # output-Uranus/, but ATHAD_COND is from the ATOM line and follows it.)
+            ('output_path', 'directory where model outputs should be placed(must end in /)', 'string', 'output_Hadean_cond/'),
 
 
 
@@ -669,7 +669,7 @@ cdef extern from "c%sModel.h":
         write_cpp_headers(filename, sections)
 
 
-    write_pxi('python/pyathad.pyx.template', 'python/pyathad.pyx', [
+    write_pxi('python/pycond.pyx.template', 'python/pycond.pyx', [
         ('atmosphere_params', 'Atmosphere', atmosphere_sections)])
 
 
@@ -680,13 +680,13 @@ cdef extern from "c%sModel.h":
 
 
     for  filename, sections in [
-        ('python/config_athad.xml', atmosphere_sections)
+        ('python/config_cond.xml', atmosphere_sections)
     ]:
         write_config_xml(filename, sections)
 
 
     for  filename, sections in [
-        ('cli/config_athad.xml', atmosphere_sections)
+        ('cli/config_cond.xml', atmosphere_sections)
     ]:
         write_config_xml(filename, sections)
 
