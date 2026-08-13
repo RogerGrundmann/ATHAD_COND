@@ -170,11 +170,90 @@ public:
                 // Guarding here rather than clamping downstream keeps the surface cell's
                 // mixture properties (R, cp, density) meaningful, which matters because
                 // the whole column is anchored on them.
+                //
+                // ATHAD_COND KEEPS THIS GUARD — the surface here is 513 K, well below the
+                // critical point, so it never fires — and adds the branch below, which is
+                // the one that runs. Removing the guard rather than passing it would have
+                // been the obvious move and the wrong one: it is still correct, and a
+                // 27 bar corner of the stated input range boils at 501 K.
                 if (m.t.x[0][j][k] * m.t_0 >= AtmMixture::T_CRIT_H2O) {
                     m.Evaporation_Dalton.y[j][k] = 0.0;
                     m.Evaporation_Meyer.y[j][k]  = 0.0;
                     m.Evaporation_Rohwer.y[j][k] = 0.0;
                     m.Evaporation.y[j][k]        = 0.0;
+                    continue;
+                }
+
+                // ==============================================================
+                // ATHAD_COND: THE SEA IS A SATURATION BOUNDARY, NOT A DALTON FLUX.
+                //
+                // The three formulas below this block are Earth fits: E = coeff * (e_s -
+                // e_a) with coefficients calibrated on lakes and oceans at ~1 bar and
+                // ~288 K, where the saturation deficit is a few tens of hPa. Here
+                // p_sat(513 K) = 33.5 bar, so the deficit at the initial state is of order
+                // 33 bar = 24 700 mmHg, and Meyer's K*(1+u/16)*deficit returns of order
+                // 9 000 mm/day against Earth's ~5. Enabling them by simply dropping the
+                // guard above would reproduce, from the other side, exactly the failure the
+                // guard was written to stop: c driven to a mass fraction larger than the
+                // mass present.
+                //
+                // The physics does not need them. A liquid ocean in contact with the air
+                // above it holds that air at its own vapour pressure; the flux is whatever
+                // it takes to maintain that, and the empirical coefficient is a statement
+                // about how fast, not about where it ends up. So the surface layer is
+                // RELAXED TOWARD SATURATION with the same exponential vertical spread the
+                // Earth branch uses (n_spread = 3, weights summing to 1), and w_norm sets
+                // the rate.
+                //
+                // The three empirical numbers are still computed and still printed, marked
+                // as Earth-calibrated and unused, so the gap between them and the boundary
+                // condition stays visible instead of being deleted. If one of them ever
+                // becomes plausible here, that is worth seeing.
+                {
+                    const double T_s   = std::max(180.0, m.t.x[0][j][k] * m.t_0);   // [K]
+                    const double p_s   = m.p_stat.x[0][j][k];                       // [hPa]
+                    const double M_nw  = AtmMixture::M_nonwater(m.c.x[0][j][k],
+                                             m.co2.x[0][j][k], m.m_comp.M_bg);
+                    const double E_s   = SaturationH2O::saturationPressureAuto(T_s);
+                    const double q_sea = SaturationH2O::saturationMassFraction(E_s, p_s, M_nw);
+
+                    // Wind speed only enters the diagnostics; the boundary condition is
+                    // thermodynamic.
+                    const double vel = sqrt((m.u.x[0][j][k] * m.u.x[0][j][k]
+                                           + m.v.x[0][j][k] * m.v.x[0][j][k]
+                                           + m.w.x[0][j][k] * m.w.x[0][j][k]) / 3.0) * m.u_0;
+                    const double u_kmh_d = vel * 3.6;
+                    const double e_air   = (q_sea > 0.0 && q_sea < 1.0)
+                                         ? m.c.x[0][j][k] * p_s * M_nw
+                                           / (m.c.x[0][j][k] * M_nw
+                                              + (1.0 - m.c.x[0][j][k]) * AtmMixture::M_H2O)
+                                         : 0.0;                                     // [hPa], exact
+                    const double sd_d    = std::max(0.0, E_s - e_air);              // [hPa]
+
+                    m.Evaporation_Dalton.y[j][k] =
+                        AtomUtils::C_Dalton(0, j, k, m.coeff_Dalton, m.u_0, m.u, m.v, m.w) * 24.0 * sd_d;
+                    m.Evaporation_Meyer.y[j][k]  =
+                        K_Meyer * hPa_to_mmHg * (1.0 + u_kmh_d / 16.0) / 30.0 * sd_d;
+                    m.Evaporation_Rohwer.y[j][k] =
+                        0.771 * (1.465 - 0.000732 * p_s * hPa_to_mmHg)
+                              * (0.44 + 0.0733 * u_kmh_d) * hPa_to_mmHg * sd_d;
+                    m.Evaporation.y[j][k] = m.Evaporation_Dalton.y[j][k];
+
+                    // Surface layer toward saturation, then the exponential spread above it.
+                    m.c_fix.y[j][k] = m.c.x[0][j][k];
+                    m.c.x[0][j][k]  = m.c_fix.y[j][k] + (q_sea - m.c_fix.y[j][k]) * w_norm;
+
+                    for (int i = 1; i <= n_spread && i < m.im; i++) {
+                        const double weight = std::pow(r, i) * w_norm;
+                        const double T_i    = std::max(180.0, m.t.x[i][j][k] * m.t_0);
+                        const double p_i    = m.p_stat.x[i][j][k];
+                        const double M_nw_i = AtmMixture::M_nonwater(m.c.x[i][j][k],
+                                                  m.co2.x[i][j][k], m.m_comp.M_bg);
+                        const double q_s_i  = SaturationH2O::saturationMassFractionAt(
+                                                  T_i, p_i, M_nw_i);
+                        m.c.x[i][j][k] = std::min(
+                            m.c.x[i][j][k] + (q_sea - m.c_fix.y[j][k]) * weight, q_s_i);
+                    }
                     continue;
                 }
 
