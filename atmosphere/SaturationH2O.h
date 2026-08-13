@@ -201,15 +201,95 @@ namespace SaturationH2O {
         return 0.5 * (lo + hi);
     }
 
+    // Latent heat of whichever phase change is stable at T [J/kg] — the partner of
+    // saturationPressureAuto, so a derivative taken along the Auto curve uses the L that
+    // belongs to it. Getting these two out of step is a 20 % error in the ice range.
+    inline double latentHeatAuto(double T)
+    {
+        return (T >= T_TRIPLE) ? latentHeat(T) : latentHeatSublimation(T);
+    }
+
     // ------------------------------------------------------------------------
-    // dq_sat/dT [1/K] from the Clausius-Clapeyron relation,
-    //     dq_sat/dT = q_sat * L(T) / (R_v * T^2)
-    // which follows the IAPWS curve because L(T) does. The Magnus analytic derivative
-    // it replaces carried the fit's own coefficients and is wrong wherever the fit is.
-    inline double dqSatdT(double q_sat, double T)
+    // The saturation-derivative factor A [dimensionless], shared by dq_sat/dT and the
+    // moist lapse rate so the two cannot disagree.
+    //
+    //     q_sat = x*Mw / (x*Mw + (1-x)*Mo),        x = E(T)/p
+    //     dq/dx = Mw*Mo / den^2,                   den = x*Mw + (1-x)*Mo
+    //     A     = x * Mw*Mo / den^2
+    //
+    // so that  (dq/dT)_p = A * L/(R_v T^2)  and  (dq/dp)_T = -A/p.
+    //
+    // WHY THIS IS NOT THE FAMILIAR q_sat*L/(R_v T^2): that form is the x -> 0 limit. A
+    // reduces to q_sat exactly when x is small (den -> Mo, A -> x*Mw/Mo = q_sat), which is
+    // why Earth never noticed. At the ATHAD_COND sea surface x = 0.558 and A/q_sat =
+    // Mo/den = 1.48, so the dilute derivative understates the real one by a third. Water is
+    // 35 % of the mass there; it is not a trace and cannot be differentiated like one.
+    // ------------------------------------------------------------------------
+    // Phase given explicitly, for callers that need the liquid and the ice branch at the
+    // same temperature (the saturation adjustment weighs both).
+    inline double satDerivFactorAt(double E, double p, double M_other)
+    {
+        if (E == NO_SATURATION || !(p > 0.0) || E >= p) return 0.0;
+
+        const double x   = E / p;
+        const double den = x * AtmMixture::M_H2O + (1.0 - x) * M_other;
+        if (!(den > 0.0)) return 0.0;
+
+        return x * AtmMixture::M_H2O * M_other / (den * den);
+    }
+
+    // Phase chosen by temperature, the common case.
+    inline double satDerivFactor(double T, double p, double M_other)
+    {
+        return satDerivFactorAt(saturationPressureAuto(T), p, M_other);
+    }
+
+    // ------------------------------------------------------------------------
+    // dq_sat/dT [1/K] at constant pressure, exact for a mixture of any water content.
+    // Follows the IAPWS curve because L(T) does; the Magnus analytic derivative it
+    // replaces carried the fit's own coefficients and is wrong wherever the fit is.
+    inline double dqSatdTFrom(double E, double L, double T, double p, double M_other)
     {
         if (!(T > 0.0)) return 0.0;
-        return q_sat * latentHeat(T) / (AtmMixture::R_H2O * T * T);
+        return satDerivFactorAt(E, p, M_other) * L / (AtmMixture::R_H2O * T * T);
+    }
+
+    inline double dqSatdT(double T, double p, double M_other)
+    {
+        return dqSatdTFrom(saturationPressureAuto(T), latentHeatAuto(T), T, p, M_other);
+    }
+
+    // ------------------------------------------------------------------------
+    // SATURATED (moist) adiabatic lapse rate [K/m], positive downward-decreasing.
+    //
+    // From conservation of moist static energy along a saturated ascent,
+    //     cp dT + L dq + g dz = 0,   q = q_sat(T, p(z)),   dp = -rho g dz,
+    // and with (dq/dT)_p = A L/(R_v T^2) and (dq/dp)_T = -A/p, rho = p/(R_mix T):
+    //
+    //     dT/dz = -g * [1 + L*A/(R_mix*T)] / [cp + L^2*A/(R_v*T^2)]
+    //
+    // BOTH terms matter and the numerator is the one that gets dropped. Keeping only the
+    // denominator — the familiar g/(cp + L dq/dT) — gives 0.7 K/km at the ATHAD_COND sea
+    // surface; the full expression gives 5.04 K/km against a dry 7.27. A factor of seven
+    // apart, and the truncated form is the one that looks like the textbook.
+    //
+    // Checks out against Earth: at 300 K / 1000 hPa with M_other = 0.02896 it returns
+    // 3.79 K/km, the standard saturated adiabatic value. Returns the DRY lapse g/cp wherever
+    // no condensation is possible, so a caller can use it unconditionally.
+    // ------------------------------------------------------------------------
+    inline double moistLapse(double T, double p, double M_other,
+                             double cp, double R_mix, double g)
+    {
+        if (!(cp > 0.0) || !(T > 0.0) || !(R_mix > 0.0)) return 0.0;
+
+        const double A = satDerivFactor(T, p, M_other);
+        if (!(A > 0.0)) return g / cp;                       // nothing to condense
+
+        const double L   = latentHeatAuto(T);
+        const double num = 1.0 + L * A / (R_mix * T);
+        const double den = cp  + L * L * A / (AtmMixture::R_H2O * T * T);
+
+        return (den > 0.0) ? g * num / den : g / cp;
     }
 
     // Convenience: saturation mass fraction directly from T, p and the background molar

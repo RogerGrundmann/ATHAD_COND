@@ -224,17 +224,28 @@ private:
                             // with cloud present (thermodynamically impossible) and feeding
                             // the coastal precip runaway. omega = 1/(1+G) drives the map
                             // derivative 1-omega*(1+G) to 0 (stable, ~Newton-optimal) at all T.
-                            // dq_sat/dT from Clausius-Clapeyron: q_sat*L/(Rv*T^2).
+                            // dq_sat/dT from Clausius-Clapeyron.
                             // project_overprecip_saturation_injection.
                             // L(T) and cp(T), not constants: the whole point of the
                             // damping is to track dq_sat/dT, and both factors in
                             // G = (L/cp)*dq_sat/dT move strongly across 273-647 K.
+                            //
+                            // ATHAD_COND: the EXACT derivative, not the dilute
+                            // q_sat*L/(Rv*T^2). The two differ by M_other/(x*Mw+(1-x)*Mo),
+                            // which is 1.48 at this model's sea surface, so the dilute form
+                            // understated the gain by a third and the damping omega =
+                            // 1/(1+Gain) was correspondingly too weak — in exactly the
+                            // regime (high q_sat, steep dq_sat/dT) the damping exists for.
+                            // Phase given explicitly here because both branches are wanted
+                            // at the same T.
                             const double cp_g   = AtmMixture::cp_of(q_v_b, m.co2.x[i][j][k],
                                                                     T, m.m_comp.M_bg);
                             const double L_cnd  = SaturationH2O::latentHeat(T);
                             const double L_dep  = SaturationH2O::latentHeatSublimation(T);
-                            const double Gain = CND * (L_cnd / cp_g) * SaturationH2O::dqSatdT(q_sat, T)
-                                              + DEP * (L_dep / cp_g) * SaturationH2O::dqSatdT(q_Ice, T);
+                            const double Gain = CND * (L_cnd / cp_g)
+                                              * SaturationH2O::dqSatdTFrom(E_sat, L_cnd, T, p_local, M_other)
+                                              + DEP * (L_dep / cp_g)
+                                              * SaturationH2O::dqSatdTFrom(E_Ice, L_dep, T, p_local, M_other);
                             const double omega = 1.0 / (1.0 + Gain);
                             q_v_hyp = q_v_b + omega * (q_v_target - q_v_b);
 

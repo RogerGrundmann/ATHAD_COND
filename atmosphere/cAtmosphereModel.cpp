@@ -535,7 +535,37 @@ void cAtmosphereModel::RunTimeSlice(int Ma){
         for(int k = 0; k < km; k++)
             t_top_init[j][k] = t.x[im-1][j][k];
 
-    initWaterWapour();                                                  // initWaterWapour() and initCloudIce() belong together, init_vapour_cloud() stands alone
+    // ATHAD_COND: the initial state is a FIXED POINT of three fields, not a sequence.
+    //
+    // In ATHAD each of these could be built once, in order, because none of them fed back:
+    // the water field was uniform, the CO2 field was uniform, and the profile depended on
+    // them only through constants. Here every arrow is live —
+    //
+    //     c   depends on T and p   (it is the saturation profile, initWaterWapour)
+    //     co2 depends on c         (well mixed in the DRY air, co2Atmosphere)
+    //     T,p depend on c and co2  (through R_mix, cp and the moist adiabat, densities)
+    //
+    // — so building them once, on the provisional profile initTemperatureData leaves, gives
+    // a column that is nowhere saturated: the stored c belongs to the old temperatures and
+    // sits ~20 % below the q_sat of the new ones. The moist adiabat in densities() then
+    // never fires, the profile stays dry-adiabatic, and the model silently runs the physics
+    // it was forked to stop running. That is how this was found.
+    //
+    // Iterating c and (T,p) against each other does NOT converge — see the long note in
+    // ThermoAtm::densities(): it is a fixed point over the runaway-greenhouse feedback, and
+    // it climbed 17 K between three passes and eight without settling. densities(true)
+    // integrates the water profile in the same upward sweep as the temperature and the
+    // pressure instead, which is one pass and exact.
+    //
+    // initWaterWapour still runs first, to lay down a starting c for the surface anchor and
+    // for the levels the sweep does not diagnose; co2Atmosphere then follows c. Only the CO2
+    // dependence is left iterating, and that one is weak (co2 enters through R and cp, not
+    // through the latent heat), so two passes settle it to the fourth digit.
+    initWaterWapour();
+    for (int pass = 0; pass < 2; pass++) {
+        ThermoAtm(*this).co2Atmosphere();                               // co2 well mixed in the dry air
+        ThermoAtm(*this).densities(true);                               // T, p AND the water profile
+    }
     initCloudIce();
 //    init_vapour_cloud();                                                // initialisation of water vapour and cloud/ice formation based on the temperature profile
 

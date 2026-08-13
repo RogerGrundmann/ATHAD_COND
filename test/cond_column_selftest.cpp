@@ -175,22 +175,52 @@ int main()
     // 0.35 it is not the derivative of the exact mass fraction — see the exact form below,
     // which differs by M_other/(x*M_H2O + (1-x)*M_other) ~ 1.45 here. Both are printed so
     // the gap is visible; Phase 2 makes the exact one the one the model uses.
-    const double dqdT_dilute = SaturationH2O::dqSatdT(q_sat_surf, T_SURF);
-    const double den_exact   = x_H2O_surf * AtmMixture::M_H2O + (1.0 - x_H2O_surf) * M_nw_surf;
-    const double dqdT_exact  = (AtmMixture::M_H2O * M_nw_surf / (den_exact * den_exact))
-                             * x_H2O_surf * L_surf
-                             / (AtmMixture::R_H2O * T_SURF * T_SURF);
+    const double dqdT_dilute = q_sat_surf * L_surf / (AtmMixture::R_H2O * T_SURF * T_SURF);
+    const double dqdT_exact  = SaturationH2O::dqSatdT(T_SURF, P_SURF_BAR * 1000.0, M_nw_surf);
     std::printf("      dq_sat/dT  dilute %.5g /K   exact %.5g /K   ratio %.3f\n",
                 dqdT_dilute, dqdT_exact, dqdT_exact / dqdT_dilute);
-    check_true("the dilute derivative understates the exact one",
-               dqdT_exact > 1.2 * dqdT_dilute);
+    check("the exact/dilute ratio is M_other/den",
+          dqdT_exact / dqdT_dilute,
+          M_nw_surf / (x_H2O_surf * AtmMixture::M_H2O + (1.0 - x_H2O_surf) * M_nw_surf), 1e-2);
 
-    const double gamma_dry   = 9.81 / cp_surf;
-    const double gamma_moist = 9.81 / (cp_surf + L_surf * dqdT_exact);
-    std::printf("      dry lapse %.3f K/km   saturated lapse %.3f K/km\n",
-                gamma_dry * 1000.0, gamma_moist * 1000.0);
-    check_true("the saturated lapse is less than a fifth of the dry one",
-               gamma_moist < 0.2 * gamma_dry);
+    // The lapse rate itself. NOTE the trap this check was written wrong the first time:
+    // the familiar g/(cp + L dq/dT) keeps only the denominator of the moist-static-energy
+    // balance and gives 0.7 K/km here, which is seven times too small. The pressure
+    // dependence of q_sat is not negligible when water is 56 % by mole.
+    const double gamma_dry     = 9.81 / cp_surf;
+    const double gamma_trunc   = 9.81 / (cp_surf + L_surf * dqdT_exact);
+    const double gamma_moist   = SaturationH2O::moistLapse(T_SURF, P_SURF_BAR * 1000.0,
+                                     M_nw_surf, cp_surf, S.R_mix, 9.81);
+    std::printf("      dry %.3f K/km   saturated %.3f K/km   (truncated form would give %.3f)\n",
+                gamma_dry * 1000.0, gamma_moist * 1000.0, gamma_trunc * 1000.0);
+    check("dry lapse [K/km]",                         gamma_dry * 1000.0,   7.27, 1e-2);
+    check("saturated lapse [K/km]",                   gamma_moist * 1000.0, 5.04, 2e-2);
+    check_true("the saturated lapse is well below the dry one",
+               gamma_moist < 0.75 * gamma_dry);
+    check_true("...and well above what the truncated form claims",
+               gamma_moist > 4.0 * gamma_trunc);
+
+    // Earth, as a control on the formula itself: the standard saturated adiabatic lapse
+    // rate at 300 K / 1000 hPa is ~3.6-3.9 K/km. A formula that only ever runs at 60 bar
+    // has nothing to be checked against; this is the one point where it does.
+    const double gamma_earth = SaturationH2O::moistLapse(300.0, 1000.0, 0.02896,
+                                                          1005.0, 287.0, 9.81);
+    check("Earth control: saturated lapse at 300 K / 1 bar [K/km]",
+          gamma_earth * 1000.0, 3.79, 3e-2);
+
+    // And the dry limit. Above the critical point there is no saturation curve at all, so
+    // moistLapse must return g/cp EXACTLY — this is the path every unsaturated layer of the
+    // column takes, and a formula that only approximately reduces to the dry adiabat would
+    // put a slow bias through all of it.
+    check("dry limit: moistLapse above T_crit returns g/cp",
+          SaturationH2O::moistLapse(700.0, 60000.0, M_nw_surf, cp_surf, S.R_mix, 9.81),
+          9.81 / cp_surf, 1e-15);
+    // At 200 K there IS a saturation curve (over ice) but the vapour pressure is ~1e-4 hPa
+    // of a 60 bar column, so the correction is real and utterly negligible. Asserted as
+    // "negligible" rather than "zero" because it is not zero.
+    check("cold limit: the moist correction at 200 K is below 1e-5 relative",
+          SaturationH2O::moistLapse(200.0, 60000.0, M_nw_surf, cp_surf, S.R_mix, 9.81),
+          9.81 / cp_surf, 1e-5);
 
     // ------------------------------------------------------------------
     // 5. Known limits of the imported fits at this regime, asserted so they cannot be

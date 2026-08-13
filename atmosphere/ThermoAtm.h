@@ -1351,7 +1351,10 @@ public:
     }
 
     // ------------------------------------------------------------------------
-    void densities()
+    // set_water_profile: diagnose c in the same sweep as T and p. INITIALISATION ONLY —
+    // during the time loop c is prognostic and this must stay false, or the transport is
+    // overwritten by the profile every iteration.
+    void densities(bool set_water_profile = false)
     {
         using namespace std;
         cout << "\n\n\n      PressureDensity" << endl;
@@ -1407,6 +1410,7 @@ public:
                 // the integration meaningless; 180 K is far below anything physical here.
                 double T_prev = std::max(180.0, m.t.x[0][j][k] * m.t_0);
                 double p_prev = p_sl_factor * T_prev;                   // [hPa]
+                double q_sat_min = 1.0;                                 // cold trap, set_water only
 
                 for (int i = 0; i < m.im; i++) {
                     const double q_v = m.c.x[i][j][k];
@@ -1420,9 +1424,47 @@ public:
                     } else {
                         const double dz = height_table[i] - height_table[i-1];
 
-                        // Dry adiabat with the LOCAL heat capacity: Gamma = g/cp.
-                        const double cp_loc = AtmMixture::cp_of(q_v, q_c, T_prev, M_bg);
-                        const double T_ad   = T_prev - (m.g / cp_loc) * dz;
+                        // ATHAD_COND: MOIST adiabat where the layer is saturated, dry where
+                        // it is not.
+                        //
+                        // ATHAD integrates dT/dz = -g/cp throughout, and that is correct
+                        // there for a stated reason: water is supercritical from the ground
+                        // to ~177 km, so nothing condenses and there is no latent heat to
+                        // release. Here the air over the sea IS saturated and stays so up to
+                        // the cold trap, which is a third of the mass of the column. Using
+                        // the dry adiabat through it overstates the lapse by 44 % and puts
+                        // the cold trap kilometres too low.
+                        //
+                        // The saturation test uses the water actually present against the
+                        // local q_sat, so the switch is a property of the state rather than
+                        // a prescribed height — the same choice as the cold trap in
+                        // initWaterWapour. moistLapse returns g/cp itself wherever no
+                        // condensation is possible, so the branch below is about which
+                        // physics APPLIES, not about avoiding a bad value.
+                        // The step from i-1 to i is a property of the parcel AT i-1, so the
+                        // composition, the heat capacity and the saturation test all come
+                        // from level i-1 — the level T_prev and p_prev belong to. Using
+                        // level i's water against level i-1's saturation is an index
+                        // mismatch that looks harmless and is not: q_sat falls with height,
+                        // so c(i) is always below q_sat(i-1) by exactly one level's worth,
+                        // the test fails at EVERY level, and the moist branch never runs.
+                        // It cost an hour here, silently, with a column that looked right.
+                        const double q_v_p  = m.c.x[i-1][j][k];
+                        const double q_c_p  = m.co2.x[i-1][j][k];
+                        const double cp_loc = AtmMixture::cp_of(q_v_p, q_c_p, T_prev, M_bg);
+                        const double M_nw   = AtmMixture::M_nonwater(q_v_p, q_c_p, M_bg);
+                        const double q_s    = SaturationH2O::saturationMassFractionAt(
+                                                  T_prev, p_prev, M_nw);
+
+                        // 0.99 rather than 1.0: the profile is built from q_sat in the first
+                        // place, so exact equality is a rounding coin-flip and the lapse rate
+                        // would flicker between the two branches from level to level.
+                        const double gamma = (q_v_p >= 0.99 * q_s)
+                            ? SaturationH2O::moistLapse(T_prev, p_prev, M_nw,
+                                                        cp_loc, R_loc, m.g)
+                            : m.g / cp_loc;
+
+                        const double T_ad = T_prev - gamma * dz;
 
                         // Isothermal once the adiabat drops below the radiative skin value.
                         T_i = std::max(m.t_skin, T_ad);
@@ -1434,6 +1476,31 @@ public:
 
                     m.t.x[i][j][k]      = T_i / m.t_0;
                     m.p_stat.x[i][j][k] = p_i;
+
+                    // ATHAD_COND: on the initial call the water profile is DIAGNOSED in this
+                    // same sweep instead of being read from c.
+                    //
+                    // A saturated column is one ODE — dT/dz from the moist lapse, dp/dz
+                    // hydrostatic, q = q_sat(T, p) — and its three fields have to be
+                    // integrated together. Building c from a profile and then rebuilding the
+                    // profile from that c is a fixed-point iteration over a POSITIVE feedback
+                    // (a warmer column holds more water, which releases more latent heat,
+                    // which warms it further), and it does not settle: measured here, 3 passes
+                    // gave 446.7 K at 8.9 km, 8 passes gave 463.8, and it was still climbing.
+                    // That is the runaway-greenhouse feedback arriving through the numerics
+                    // instead of the physics, and no number of passes fixes it.
+                    //
+                    // One consistent sweep has no such problem. q at level i is set from the
+                    // T and p just computed FOR level i, and the lapse rate that carries the
+                    // sweep from i to i+1 reads it back at i — so the water profile, the
+                    // temperature and the pressure are all the same integration.
+                    if (set_water_profile && i > 0) {
+                        const double M_nw_i = AtmMixture::M_nonwater(q_v, q_c, M_bg);
+                        const double q_s_i  = SaturationH2O::saturationMassFractionAt(
+                                                  T_i, p_i, M_nw_i);
+                        if (q_s_i < q_sat_min) q_sat_min = q_s_i;
+                        m.c.x[i][j][k] = std::max(q_sat_min, m.c_h2o_dry_top);
+                    }
 
                     const double water_factor = std::max(0.5, 1.0
                                         - m.cloud.x[i][j][k] - m.ice.x[i][j][k]);

@@ -1101,7 +1101,13 @@ void findCloudBaseLFS() {
                             const double dq      = m.q_v_u.x[i][j][k] - q_sat_u;
                             if(dq <= 0.0) break;
                             const double L_u   = (T_u >= m.t_0) ? m.lv : m.ls;
-                            const double dqsdT = SaturationH2O::dqSatdT(q_sat_u, T_u);
+                            // ATHAD_COND: exact dq_sat/dT, which needs the pressure and the
+                            // non-water molar mass rather than q_sat alone. See
+                            // SaturationH2O::satDerivFactor — the dilute form this replaces
+                            // is the x -> 0 limit and is a third too small at 56 % water.
+                            const double M_o_u = AtmMixture::M_nonwater(m.c.x[i][j][k],
+                                                     m.co2.x[i][j][k], m.m_comp.M_bg);
+                            const double dqsdT = SaturationH2O::dqSatdT(T_u, p_u, M_o_u);
                             const double G     = (L_u / m.cp_l) * dqsdT;        // latent gain
                             const double dcond = dq / (1.0 + G);               // damped condensation
                             m.q_v_u.x[i][j][k] -= dcond;
