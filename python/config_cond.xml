@@ -56,7 +56,7 @@
         <convection_mode>1</convection_mode>  <!-- convection type: 0=deep only (precipitating), 1=deep+shallow (non-precipitating if p_diff<p_stat_diff), 2=deep+shallow+midlevel (also non-precipitating for cloud base above p_stat_midlevel/700 hPa)(int) -->
         <iter_prec>3</iter_prec>  <!-- precipitation sub-iteration count: min 3 for evaporation (e_d, e_p) to act on non-zero P_conv; check convergence at 4-5(int) -->
         <evap_model>Meyer</evap_model>  <!-- evaporation formula driving surface humidity update: Dalton, Meyer, or Rohwer(string) -->
-        <L_atm>15719.0</L_atm>  <!-- ATHAD: amplitude of the radial stretch in m; shell = (exp(zeta)-1)*L_atm = 300 km(double) -->
+        <L_atm>6287.5</L_atm>  <!-- ATHAD_COND: amplitude of the radial stretch in m; shell = (exp(zeta)-1)*L_atm = 120 km(double) -->
         <zeta>3.0</zeta>  <!-- ATHAD: radial coordinate-stretching factor (was a hard-coded 3.715)(double) -->
         <tropopause_pole>195000.0</tropopause_pole>  <!-- ATHAD: top of the convective column at the poles in m(double) -->
         <tropopause_equator>207000.0</tropopause_equator>  <!-- ATHAD: top of the convective column at the equator in m(double) -->

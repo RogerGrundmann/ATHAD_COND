@@ -320,8 +320,23 @@ def main():
             #
             # L_atm is the AMPLITUDE of the exponential stretch, NOT the shell thickness
             # and NOT a layer spacing. The shell is (exp(zeta) - 1) * L_atm:
-            #     Earth: (exp(3.715) - 1) *   400.0 =  16.0 km
-            #     ATHAD: (exp(3.000) - 1) * 15719.0 = 300.0 km
+            #     Earth:      (exp(3.715) - 1) *   400.0 =  16.0 km
+            #     ATHAD:      (exp(3.000) - 1) * 15719.0 = 300.0 km
+            #     ATHAD_COND: (exp(3.000) - 1) *  6287.5 = 120.0 km
+            #
+            # ATHAD_COND: 120 km, and the reasoning below is ATHAD's, re-run.
+            #
+            # The scale height here is 15.0 km at the sea against ATHAD's 59.3, so the same
+            # number of pressure decades fits in a quarter of the height. The saturated
+            # troposphere reaches 66 km (measured, not assumed — it is where the moist
+            # adiabat meets t_skin), the grey radiating level tau ~ 1 sits near 0.06 bar at
+            # kappa_CO2 = 0.001, which the profile reaches at ~62 km, and 120 km puts the lid
+            # at ~1e-5 bar — 6e-7 of the surface pressure, against the 1.5e-6 that made
+            # ATHAD's lid transparent.
+            #
+            # The grid also lands better. With a 300 km shell and im = 61 the troposphere got
+            # 33 levels and 27 were spent on isothermal vacuum; at 120 km it gets ~49, and the
+            # first layer is 0.32 km instead of 0.81.
             #
             # The shell is set by where the column reaches the radiating level, and the
             # profile has moved under it twice: 300 km on the inherited COSMO shape, 230 km
@@ -348,7 +363,7 @@ def main():
             # fixed at 61 and a deeper shell is a coarser grid — it is not yet converged.
             #
             # zeta 3.0 with im = 61 keeps the top cell at ~1.7 local scale heights.
-            ('L_atm', 'ATHAD: amplitude of the radial stretch in m; shell = (exp(zeta)-1)*L_atm = 300 km', 'double', 15719.0),
+            ('L_atm', 'ATHAD_COND: amplitude of the radial stretch in m; shell = (exp(zeta)-1)*L_atm = 120 km', 'double', 6287.5),
             ('zeta', 'ATHAD: radial coordinate-stretching factor (was a hard-coded 3.715)', 'double', 3.0),
 
             # ATHAD: the radiative-convective boundary of a runaway steam atmosphere sits

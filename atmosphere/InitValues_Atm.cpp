@@ -940,8 +940,17 @@ void cAtmosphereModel::initCloudIce() {
     const double det_T_0   = t_0;
     // Parabola H_crit(p): roots at p=0 and p=p_crit, minimum Hu_cr_mid at p=p_mid.
     // H_crit = Hu_cr_max - Hu_curv * x * (1 - x),  x = p / p_crit
-    const double p_crit     = 1000.0;
-    const double p_mid      = 550.0;
+    //
+    // ATHAD_COND: p_crit and p_mid were 1000 and 550 hPa — Earth's surface pressure and
+    // its mid-troposphere — so the parabola's shape was pinned to Earth's column depth.
+    // At 60 bar the whole 0-to-p_crit range would be spent inside the top 53 km, x would
+    // exceed 1 through the entire troposphere, and x*(1-x) would go NEGATIVE, turning the
+    // critical humidity from a reduction into an amplification exactly where the cloud is.
+    // Anchoring both to the surface pressure keeps the parabola the same SHAPE in
+    // fractional depth, which is what it was always meant to be, and reproduces the Earth
+    // values at an Earth surface pressure.
+    const double p_crit     = p_0;                                      // was 1000 hPa
+    const double p_mid      = 0.55 * p_0;                               // was 550 hPa
     const double x_mid      = p_mid / p_crit;                           // 0.55
     const double Hu_curv    = Hu_diff / (x_mid * (1.0 - x_mid));        // ~0.808
     const double inv_p_crit = 1.0 / p_crit;
