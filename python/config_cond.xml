@@ -1,5 +1,5 @@
 <!-- THIS FILE IS GENERATED AUTOMATICALLY BY param.py. DO NOT EDIT. --><atom>    <common>
-        <output_path>output_Hadean_cond/</output_path>  <!-- directory where model outputs should be placed(must end in /)(string) -->
+        <output_path>output_Hadean_condensation/</output_path>  <!-- directory where model outputs should be placed(must end in /)(string) -->
         <config_xml_path>../python</config_xml_path>  <!-- directory where the configuration files are located(string) -->
         <verbose>false</verbose>  <!-- some description of the module(bool) -->
         <paraview_panorama_vts_flag>true</paraview_panorama_vts_flag>  <!-- flag to control if create paraview panorama(bool) -->
@@ -39,7 +39,7 @@
         <turb_model>k_omega_SST</turb_model>  <!-- turbulence model: none, k_epsilon, k_omega, k_omega_SST(string) -->
         <inviscid_spinup_iters>0</inviscid_spinup_iters>  <!-- cumulative iterations to run inviscid (Euler + free-slip mountains) before viscous physics activates; 0 disables(int) -->
         <inviscid_ramp_iters>20</inviscid_ramp_iters>  <!-- iterations over which diffusion coefficient ramps from 0 to 1 after the inviscid phase(int) -->
-        <moist_phys_start_iter>300</moist_phys_start_iter>  <!-- cumulative iterations before moist physics (SaturationAdjustment, ice scheme, MoistConvection) activates; lets the velocity circulation form on a dry field first; 0 disables (always on)(int) -->
+        <moist_phys_start_iter>0</moist_phys_start_iter>  <!-- ATHAD_COND: cumulative iterations before moist physics (SaturationAdjustment, ice scheme, MoistConvection) activates; 0 = always on, which is the ATHAD_COND default because condensation is the subject(int) -->
         <checkpoint_save_iter>300</checkpoint_save_iter>  <!-- dump the full 3D prognostic state to output_path/atm_restart_<iter>.bin when total_iter_count reaches this, for a fast debug restart; -1 disables(int) -->
         <restart_from_iter>-1</restart_from_iter>  <!-- load output_path/atm_restart_<iter>.bin and resume from it, skipping the dry spin-up (debug shortcut); -1 disables(int) -->
         <restart_stride>100</restart_stride>  <!-- ATHAD: iterations between full 3D restart dumps (.bin, ~925 MB each); 0 disables(int) -->

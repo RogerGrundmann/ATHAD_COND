@@ -25,7 +25,7 @@ make test                                       # IAPWS + column self-tests, run
 cd python && OMP_NUM_THREADS=8 ../cli/cond config_cond.xml
 ```
 
-Output lands in `python/output_Hadean_cond/` — the ATOM line's convention
+Output lands in `python/output_Hadean_condensation/` — the ATOM line's convention
 (`output_<name>/`, underscore, relative to the run directory; the giant-planet
 siblings hyphenate instead).
 
@@ -179,7 +179,7 @@ threading defect (ATURAN `ffd0e0e`); report failures and limits in the README (A
   Nothing quantitative survives it being wrong.
 - **The surface temperature is prescribed, not solved.** Every result is conditional on it.
 - **Rain has nowhere to go.** The sea is a boundary condition, not a reservoir, so the
-  water budget stops being a closed-system test once moist physics starts at iteration 300.
+  water budget is not a closed-system test: `moist_phys_start_iter` is 0 here, not ATHAD’s 300, because condensation is the subject.
 - **Boussinesq.** `ATM_ANELASTIC` is ported from ATHAD and ships default-off; it has not
   been measured in this regime. The density span here is ~3 orders of magnitude instead of
   ~5, which makes this the better testbed for whether it matters at all.

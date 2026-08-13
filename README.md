@@ -38,7 +38,7 @@ make test                                       # self-tests, run these first
 cd python && OMP_NUM_THREADS=8 ../cli/cond config_cond.xml
 ```
 
-Output lands in `python/output_Hadean_cond/`.
+Output lands in `python/output_Hadean_condensation/`.
 
 `make` regenerates the parameter bindings from `param.py` first. The generated files are
 tracked on purpose, so a `param.py` change shows its full effect in the diff.
@@ -210,7 +210,7 @@ is well mixed is the CO₂:background ratio *within the dry air*.
 - **The cold-trap water content is 8× the stated composition** (item 5). Testable
   prediction: a 217 K cold trap reconciles them.
 - **Rain has nowhere to go.** The sea is a boundary condition, not a reservoir, so once
-  moist physics starts at iteration 300 the water budget stops being a closed-system test.
+  the moist physics runs (from iteration 0 — `moist_phys_start_iter` is 0 here, not ATHAD’s 300) the water budget stops being a closed-system test.
   It needs an evaporation − precipitation − storage closure.
 - **The initial water profile is built on the provisional temperature** that
   `initTemperatureData` leaves, because that routine still runs before the composition

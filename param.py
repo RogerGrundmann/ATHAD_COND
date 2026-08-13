@@ -13,10 +13,10 @@ def main():
         'common': [
             # Relative to the directory the run is launched from. The ATOM line's convention
             # is to run from python/ and write to python/output_<name>/ — ATOM itself uses
-            # output_ATOM/ — so a default of output_Hadean_cond/ lands in
-            # python/output_Hadean_cond. (The giant-planet siblings hyphenate,
+            # output_ATOM/ — so a default of output_Hadean_condensation/ lands in
+            # python/output_Hadean_condensation. (The giant-planet siblings hyphenate,
             # output-Uranus/, but ATHAD_COND is from the ATOM line and follows it.)
-            ('output_path', 'directory where model outputs should be placed(must end in /)', 'string', 'output_Hadean_cond/'),
+            ('output_path', 'directory where model outputs should be placed(must end in /)', 'string', 'output_Hadean_condensation/'),
 
 
 
@@ -255,7 +255,17 @@ def main():
             ('inviscid_spinup_iters', 'cumulative iterations to run inviscid (Euler + free-slip mountains) before viscous physics activates; 0 disables', 'int', 0),
             ('inviscid_ramp_iters', 'iterations over which diffusion coefficient ramps from 0 to 1 after the inviscid phase', 'int', 20),
 
-            ('moist_phys_start_iter', 'cumulative iterations before moist physics (SaturationAdjustment, ice scheme, MoistConvection) activates; lets the velocity circulation form on a dry field first; 0 disables (always on)', 'int', 300),
+            # ATHAD_COND: 0 — the moist physics runs FROM THE FIRST ITERATION.
+            #
+            # ATHAD's 300 is defensible there: its column is supercritical from the ground to
+            # ~177 km, so the saturation adjustment has almost nothing to do, and delaying it
+            # buys a settled circulation before the stiff microphysics starts. Here
+            # condensation is the model. A run shorter than 300 iterations with this set to
+            # 300 never calls SaturationAdjustment, the ice scheme or MoistConvection at all,
+            # and reports a dry-column result that looks like a moist one — the saturated
+            # profile is built by densities() either way, so nothing in the printout says the
+            # microphysics never ran.
+            ('moist_phys_start_iter', 'ATHAD_COND: cumulative iterations before moist physics (SaturationAdjustment, ice scheme, MoistConvection) activates; 0 = always on, which is the ATHAD_COND default because condensation is the subject', 'int', 0),
 
             ('checkpoint_save_iter', 'dump the full 3D prognostic state to output_path/atm_restart_<iter>.bin when total_iter_count reaches this, for a fast debug restart; -1 disables', 'int', 300),
 #            ('checkpoint_save_iter', 'dump the full 3D prognostic state to output_path/atm_restart_<iter>.bin when total_iter_count reaches this, for a fast debug restart; -1 disables', 'int', 200),

@@ -5,7 +5,7 @@
 void cAtmosphereModel::SetDefaultConfig() {
 
   // common section
-  output_path = "output_Hadean_cond/";
+  output_path = "output_Hadean_condensation/";
   config_xml_path = "../python";
   verbose = false;
   paraview_panorama_vts_flag = true;
@@ -45,7 +45,7 @@ void cAtmosphereModel::SetDefaultConfig() {
   turb_model = "k_omega_SST";
   inviscid_spinup_iters = 0;
   inviscid_ramp_iters = 20;
-  moist_phys_start_iter = 300;
+  moist_phys_start_iter = 0;
   checkpoint_save_iter = 300;
   restart_from_iter = -1;
   restart_stride = 100;
