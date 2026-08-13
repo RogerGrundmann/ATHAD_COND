@@ -21,7 +21,7 @@ invariants" below — invariant 2 is inverted, the other three are not.
 
 ```bash
 make cond                                       # -> cli/cond
-make test                                       # IAPWS self-test, run this first
+make test                                       # IAPWS + column self-tests, run these first
 cd python && OMP_NUM_THREADS=8 ../cli/cond config_cond.xml
 ```
 
@@ -39,192 +39,151 @@ together with its uses or the build breaks.
 
 ## Atmospheric composition
 
-Mole fractions are the input; the model works in mass fractions. The residual 7 % is
-split evenly across the five trace gases.
+Mole fractions are the input; the model works in mass fractions. **The configured mole
+fractions are the SEA-SURFACE values, not the quoted dry composition** — see below.
 
-| Species | Mole frac. xᵢ | Mᵢ [g/mol] | Mass frac. qᵢ | Rᵢ [J/(kg·K)] |
-|---|---|---|---|---|
-| H₂O | 0.800 | 18.015 | 0.6724 | 461.5 |
-| CO₂ | 0.100 | 44.010 | 0.2053 | 188.9 |
-| N₂  | 0.030 | 28.014 | 0.0392 | 296.8 |
-| CH₄ | 0.014 | 16.043 | 0.0105 | 518.3 |
-| NH₃ | 0.014 | 17.031 | 0.0111 | 488.2 |
-| H₂  | 0.014 |  2.016 | 0.0013 | 4124.2 |
-| CO  | 0.014 | 28.010 | 0.0183 | 296.8 |
-| SO₂ | 0.014 | 64.066 | 0.0418 | 129.8 |
+| | at the sea (config) | above the cold trap |
+|---|---|---|
+| x(H₂O) / x(CO₂) / x(N₂) | 0.5578 / 0.4109 / 0.0313 | 0.010 / 0.920 / 0.070 |
+| M_mean [g/mol] | 29.01 | 42.63 |
+| R_mix [J/(kg·K)] | 286.6 | 195.0 |
+| cp [J/(kg·K)] | 1349 | 1028 |
+| q_H₂O / q_CO₂ [kg/kg] | 0.3464 / 0.6233 | 0.00423 / 0.9498 |
 
-- **M_mean = 21.434 g/mol**, **R_mix = 387.9 J/(kg·K)** (dry air is 286.9)
-- **Background** (everything except H₂O and CO₂): M_bg = 26.207 g/mol,
-  **R_bg = 317.3 J/(kg·K)**. This is what the `R_Air` parameter now means — it is not air.
-- **p_surf = 250 bar**, **T_surf = 1500 K** (prescribed), **ρ_surf = 42.97 kg/m³**
-- cp ≈ 2040 J/(kg·K), strongly T-dependent across 300–1500 K — roughly 2× Earth's.
+- **p_surf = 60 bar**, **T_surf = 513.15 K** (prescribed), **ρ_surf = 40.80 kg/m³**
+- **scale height 15.0 km** at the sea (ATHAD: 59.3 km) — the shell is 120 km, not 300
+- **Background** (everything except H₂O and CO₂) is N₂ alone: M_bg = 28.014 g/mol,
+  **R_bg = 296.8 J/(kg·K)**. This is what `R_Air` means. The quantity that matters for
+  saturation is **`M_nonwater` = 42.88 g/mol** (CO₂ + background) — a different number and
+  a different function. Passing `M_bg` where `M_nonwater` belongs puts the sea surface at
+  `q_sat` = 0.448 against the true 0.346.
+- ATHAD's five reducing trace gases (CH₄/NH₃/H₂/CO/SO₂) are zero here.
 
-Only **H₂O (`c`) and CO₂ (`co2`) are prognostic**, both as **mass fractions** (not ppm —
-at 20 % by mass ppm is meaningless). The other six are a fixed well-mixed background
-entering R_mix, cp_mix and the opacity.
+**Why the config does not carry the quoted composition.** The literature figure — H₂O
+0.4–2 %, CO₂ 89–95 %, N₂ 5–20 % — is the *dry* atmosphere. Air over a 240 °C sea holds
+water at its own vapour pressure: `p_sat(513.15 K) = 33.47 bar` of a 60 bar column, so
+`x_H₂O = 0.5578` at the surface. Both figures are true at different heights.
+`test/cond_column_selftest.cpp` asserts the arithmetic connecting them; `r_air` and the
+`x_*` are derived and guarded there.
 
-CO₂ is prognostic *in fact* only since README item 12: `co2Atmosphere()` used to re-impose
-a uniform field inside the time loop and discard the transported one. It is now the initial
-condition only, and `ThermoAtm::co2Column()` monitors the global mass-weighted mean, which
-is conserved (no CO₂ source or sink exists). The field still comes out uniform — with no
-gradients a passive tracer has nothing to transport — but that is now computed rather than
-asserted.
+Only **H₂O (`c`) and CO₂ (`co2`) are prognostic**, both as mass fractions. CO₂ is well
+mixed **in the dry air** — `q_CO2 = (1 − c)·f_CO2` — not as a uniform mass fraction, which
+is what ATHAD does and is only equivalent when the water field is uniform too.
 
 ## Where the physics lives
 
 | File | What it owns |
 |---|---|
 | `MixtureAtm.h` | Composition → mass fractions, `R_of`, `cp_of` (Shomate), `M_of`, `M_nonwater`, water's critical point |
-| `SaturationH2O.h` | IAPWS saturation + sublimation curves, Watson `latentHeat(T)`, exact `saturationMassFraction`, `dewPoint` (bisection), `dqSatdT` |
+| `SaturationH2O.h` | IAPWS saturation + sublimation, Watson `latentHeat`, exact `saturationMassFraction`, `dewPoint`, `satDerivFactor`, exact `dqSatdT`, **`moistLapse`** |
 | `MultiLayerRadiation.h` | Grey optical depth from column mass with pressure broadening; surface energy balance |
-| `ThermoAtm.h` | Densities and the hydrostatic column; `printColumnProfile` / `printLevelSummary` diagnostics |
-| `test/saturation_selftest.cpp` | IAPWS reference-point checks — `make test` |
+| `ThermoAtm.h` | The column integration (`densities`), the sea saturation boundary (`waterVapourEvaporation`), diagnostics |
+| `test/saturation_selftest.cpp` | IAPWS reference points |
+| `test/cond_column_selftest.cpp` | The ATHAD_COND regime: both mixtures, the config's own arithmetic, the moist lapse (with an Earth control) |
 
 ## Four invariants — do not silently break these
 
 1. **There is no topography, and the planet is hemispherically symmetric.** `h ≡ 0`,
-   `i_topography ≡ 0` everywhere, so `AtomUtils::is_land()` is false at every point.
-   Nothing in the model can sustain a north-south asymmetry either: the surface
-   temperature is a symmetric parabola, the insolation is explicitly mirrored, and there
-   is no obliquity and no seasonal cycle. So any asymmetry in the output is a defect —
-   see README item 13, where the Hadley cells differed by 32 % because of one initial
-   velocity coefficient inherited from Earth's land-sea-driven ITCZ offset. The Hadean surface is unknown; a
-   featureless global surface is the deliberate choice, not a missing data file. Do not
-   reintroduce a bathymetry read, and do not "fix" the dead land branches.
-   `LandOceanFraction()` throws if a land point ever appears.
+   `i_topography ≡ 0`, `is_land()` false everywhere — now a global *ocean*, the same
+   statement in code. `LandOceanFraction()` throws if a land point appears. Any
+   north–south asymmetry is a defect: symmetric surface parabola, mirrored insolation, no
+   obliquity, no seasons.
 
-2. **Water is supercritical below ~177 km.** Critical point 647.096 K / 220.64 bar.
-   Every condensation path must be a genuine no-op there, not a clamp. Use
-   `SaturationH2O.h`; **never reintroduce Magnus** (calibrated to ~320 K, returns 1.2e7 hPa
-   at 1500 K, which flips the sign of any `p − E` denominator) and never the dilute
-   `q_sat = ep·E/(p−E)` (water is the bulk gas, so there is no small parameter).
+2. **Water is subcritical everywhere and condensation is LIVE.** *This is ATHAD's
+   invariant 2, inverted, and it is why this fork exists.* Every path ATHAD made a genuine
+   no-op is a path that now runs. What carries over is which formulas are allowed: **never
+   Magnus** (calibrated to ~320 K, returns 1.2e7 hPa at 513 K) and **never the dilute
+   `q_sat = ep·E/(p−E)`** — invalid here for the opposite reason it was invalid in ATHAD:
+   water is 0.4 % by mole aloft, where the dilute form would be fine, and 56 % at the sea,
+   where it is not. A form valid over part of the column is worse than one valid over
+   none, because it looks right in the printouts.
 
-3. **Radiation runs in mode 2** (direct σT⁴). Modes 0/1/3/4/5 all lean on the Scotese
-   snapshot or the 280 ppm CO₂ reference; neither exists at 4.4 Ga. Radiation must *set*
-   the profile, not nudge it toward a prescribed one — **and it still does not**:
-   `ThermoAtm::densities()` re-imposes the adiabat on `t` every iteration, overwriting
-   what the dynamics and the radiation computed. The OLR is now a real integral over that
-   prescribed profile. Fixing the prescription is the open task, not a licence to restore
-   a prescribed target.
+3. **Radiation runs in mode 2** (direct σT⁴). Modes 0/1/3/4/5 lean on the Scotese snapshot
+   or the 280 ppm CO₂ reference; neither exists in a 92 % CO₂ atmosphere at 4.4 Ga.
+   Radiation must *set* the profile rather than be handed one — **and it does not yet**:
+   `densities()` re-imposes the adiabat every iteration, and the OLR currently equals
+   `σT_lid⁴` exactly (README item 6).
 
-4. **The column is on its own adiabat, integrated not fitted.** `dT/dz = −g/cp` with local
-   cp, hydrostatic on the layer-mean T, isothermal above `t_skin`. Do **not** restore the
-   COSMO `T = T₀√(1−coeff·h)` form: it is a sqrt in height, so matching its near-surface
-   slope to the adiabat does not make it an adiabat — it reaches zero at 156 km, inside
-   the domain.
+4. **The column is on its own adiabat, integrated not fitted, and the adiabat is MOIST
+   where the air is saturated.** `SaturationH2O::moistLapse`, hydrostatic on the layer-mean
+   T, isothermal above `t_skin`. Do **not** restore the COSMO `T = T₀√(1−coeff·h)` form.
+   Do **not** revert to `dT/dz = −g/cp`: `cosmo_lapse_fraction = 1.0` is justified in ATHAD
+   *because nothing condenses there*, and that justification is void here.
+   And do not use `g/(cp + L·dq_sat/dT)` — that is only the denominator of the moist-static-
+   energy balance, and it gives 0.7 K/km here against the correct 5.04.
 
 ## Assumptions vs. results — read this before quoting any number
 
-The model reproduces its design targets exactly and its energy balance closes. That does
-**not** make its outputs predictions. These are inputs, in rough order of how much they
-move the answer:
-
 | Parameter | Value | Status |
 |---|---|---|
-| `kappa_H2O` / `kappa_CO2` / `kappa_bg` | 0.01 / 0.001 / 1e-6 m²/kg | **Biggest lever on OLR**, factor-of-2 uncertain |
-| `geothermal_flux` | 150 W/m² | See below — the model now argues against this value |
-| `t_surf_equator` / `t_surf_pole` | 1500 / 1450 K | **Prescribed, not solved** |
-| `t_skin` | 254.0 K | From energy balance, but clear-sky albedo — not a fixed point |
-| insolation | 0.71 S₀ | Faint young Sun at 4.4 Ga |
-| `omega` | 3.17e-4 (5.5 h day) | Estimates range 4–6 h |
-| `cosmo_lapse_fraction` | 1.0 (dry adiabat) | Justified: nothing condenses in the deep column |
-
-A grey scheme also cannot represent the window regions that set the real runaway limit.
+| `geothermal_flux` | 150 W/m² | **Inherited from ATHAD's magma ocean and almost certainly wrong.** 55 % of the whole energy input, against modern Earth's 0.087 W/m². Biggest unexamined input |
+| `kappa_CO2` / `kappa_H2O` / `kappa_bg` | 0.001 / 0.01 / 1e-6 m²/kg | Factor-of-2 uncertain. `kappa_CO2` now dominates (CO₂ column 5.8e5 kg/m² vs water 2.6e3) |
+| `t_surf_equator` / `t_surf_pole` | 513.15 / 503.15 K | **Prescribed, not solved** |
+| `t_skin` | fixed-point iterate | Currently *sets* the OLR rather than following it |
+| `albedo_cloud` | 0.50 | IS the planetary albedo (0.4997 measured); saturates wherever condensate exists, which is now everywhere |
+| `omega` | 3.17e-4 (5.5 h day) | Inherited; this epoch is later and slower |
+| `delta_i_c` | 500 s | Bechtold convective timescale, Earth-calibrated. A time, not a pressure — no unit error, and no evidence here to replace it |
 
 ## What the model currently says
 
-**The model now computes an outgoing longwave flux.** Everything below is measured; see
-README items 9-11.
+Measured; see the README for the full items.
 
-- `MultiLayerRadiation` is two-stream flux sweeps, not the inherited tridiagonal solve:
-  `up[i] = up[i-1](1-eps_i) + eps_i sigma T_i^4` upward, the mirror downward, and radiative
-  equilibrium `sigma T_i^4 = (up[i-1] + dn[i+1])/2` in which **eps cancels**. Nothing
-  divides by eps, so an optically thin top is exact rather than fatal. This removed the
-  ceiling on the shell.
-- **Shell 300 km**, 61 levels; top 3.8e-4 bar with lid eps = 0.0000, isothermal skin
-  resolved from 256 km, condensation from 242.8 km. **OLR = 581 W/m2 against
-  sigma*T_lid^4 = 271 — decoupled, i.e. a real column integral.** At the old 230 km the
-  two were equal and the OLR was an input.
-- **The model's first genuine statement: its opacity is too low.** OLR 581 W/m2 against
-  271 absorbed + geothermal, so the atmosphere radiates away more than twice what it takes
-  in and cannot hold the prescribed 1500 K surface. That is a claim about
-  `kappa_H2O` = 0.01 m2/kg, not about the boundary.
-- **Not grid-converged**: 519 W/m2 at 260 km against 581 at 300 km with `im` fixed at 61.
-- Mean planetary albedo 0.4999 = `albedo_cloud`; the reflectivity saturates the moment any
-  condensate exists, so the model reports that parameter.
-- Insolation is now TOA (mean 241.56 W/m2); `t_skin` is a fixed point against the model's
-  own albedo, converging to 262.85 K.
-- `radiation.x` is the **upward long-wave flux**, not sigma*T^4; `bcRadius` no longer pins
-  the radiation lid.
-- The **geothermal >= 195 W/m2** claim of Phase 7 is retracted: it rested on an OLR that
-  was `sigma*t_skin^4` plus a stale lid pin (README item 10).
-
-Bit-identical at 1, 4 and 8 OpenMP threads. Text diagnostics print every 10 iterations for
-short runs (`nm ≤ 100`), every 100 for longer ones; `diagnostic_stride` overrides.
+- **Saturated troposphere 62 km deep.** 511 K at the sea, 429 K at 18 km, 280 K at 60 km;
+  first 10 km at **5.02 K/km** against the 5.04 the moist lapse predicts. Precipitable
+  water 133.5 m. `q_H₂O` tracks `q_sat` to four digits.
+- **The cold trap is 8× too wet**: 0.0349 kg/kg against the 0.00423 the stated dry
+  composition implies. Reconciling them needs a cold trap near **217 K**. Testable.
+- **The OLR is not yet an output**: OLR = σT_lid⁴ = 268.10 W/m² to six figures, with
+  eps = 0.0000 and a transparent lid. τ ≈ 1 falls at ~0.07 bar, which is where the
+  isothermal skin begins, so the emission comes from a prescribed temperature and `t_skin`
+  relaxes to close the balance it is reporting. Deepening the shell will not fix it.
+- Not yet run beyond 20 iterations: no stability run, no grid convergence, no thread
+  determinism check.
 
 ## Relationship to the family
 
-Siblings live beside this directory: `ATOM_Precipitation` (modern Earth), `ATJUP`,
-`ATSAT`, `ATURAN`, `ATNEPT` (giants), `ASTIM` (impacts).
+Siblings live beside this directory: `ATHAD` (the parent, ~4.4 Ga magma ocean),
+`ATOM_Precipitation` (modern Earth), `ATJUP`, `ATSAT`, `ATURAN`, `ATNEPT` (giants),
+`ASTIM` (impacts).
 
-C++ class, file and function names are kept **identical to `ATOM_Precipitation`** so fixes
-cherry-pick in both directions; only the outer shell is renamed (`libathad.a`, `cli/had`,
-`config_athad.xml`, `pyathad`). Preserve that.
+C++ class, file and function names are kept **identical to ATHAD**, which keeps them
+identical to `ATOM_Precipitation`; only the outer shell is renamed (`libcond.a`,
+`cli/cond`, `config_cond.xml`, `pycond`). Preserve that. The git history is ATHAD's, and
+`git remote athad` points at the sibling working copy, so `git cherry-pick` works in both
+directions — use it rather than re-implementing a fix that already exists next door.
 
-**Seventeen defects found in the inherited code so far, all latent on Earth and live here.**
-The pattern is consistent and worth expecting: *Earth's numbers as bare literals inside
-physics kernels, each with a comment justifying it by Earth's conditions.* Examples —
-`dr = 0.025` silently tied to `im = 41`; a 333.15 K cap written back into the prognostic
-temperature; `287.0` J/(kg·K) as the density gas constant; convective triggers as absolute
-hPa; `p_stat` cubically extrapolated at the lid. When something behaves oddly, look for a
-constant that was true at 1 bar and 288 K.
+**The pattern to expect, and why it is worse here than in ATHAD.** ATHAD found seventeen
+defects of one shape: *Earth's numbers as bare literals inside physics kernels.* At 250 bar
+those are wrong by orders of magnitude and obvious. **At 60 bar they are wrong by a factor,
+and plausible.** `p_stat <= 1000 hPa` fails at every level of ATHAD's column and so does
+nothing; here it selects everything above 53 km and fires the deep-convection scheme in the
+stratosphere. When something behaves oddly, look for a constant that was true at 1 bar and
+288 K — and do not assume that a branch which now *runs* is therefore correct.
 
-The three most recent are worth stating because they show the pattern's worst form — an
-Earth-only regime written as a *fallback branch*, so it never runs at home and is never
-tested: `SaturationAdjustment::clampAndFade` returned `q_sat = ep*1e-5` for superheated
-vapour when the correct answer is 1, and so condensed the entire water column in the one
-place where nothing can condense; the same file's Newton loop kept the dilute form the
-entry point had already been fixed away from; and `AtmMixture::M_nonwater` took only the
-CO2 fraction, so the renormalisation "to exclude H2O" its comment promised was
-arithmetically a no-op. A fourth of the same shape: `init_tropopause_layers` converted a
-height to a level index as `round(h / L_atm)`, which is only an index on a uniform grid —
-this one is exponentially stretched, so the pole's convective top was placed at level 12
-(13 km) instead of 52 (196 km), and `VelocityInitializer` built the entire initial wind
-structure inside the bottom 4 % of the atmosphere.
-
-**Fixes worth porting back upstream** (not yet applied to ATOM_Precipitation as of
-2026-08-11): the `t.x[-1]` out-of-bounds in `MoistConvection::findCloudBaseLFS`; the
-`m_node_weights` OpenMP race in `GetMean_2D/3D`; the UB in `get_temperatures_from_curve`;
-and `-MMD -MP` header dependencies in the Makefile.
+Fixes made here that belong upstream in ATHAD: the exact `dqSatdT` (ATHAD's dilute form is
+correct only in the `x → 0` limit, and ATHAD's water is not dilute either — it is the bulk
+gas, so the error there is larger, not smaller); `moistLapse`; and the `M_bg`/`M_nonwater`
+distinction at the saturation call sites.
 
 Traps already solved elsewhere in the family — check before re-deriving:
-Coriolis/centrifugal signs (ATURAN `8b284cb`, `4201957`; ATNEPT `024c37f`, `e412b1b` —
-ATHAD's dynamics already agree, its *diagnostics* did not); mass- not mole-weighted mixture
-properties (ATNEPT `c116d71`); in-place Gauss–Seidel as a threading defect (ATURAN
-`ffd0e0e`); report failures and limits in the README (ATURAN `74b4ded`, ATNEPT `34286b8`).
+Coriolis/centrifugal signs (ATURAN `8b284cb`, `4201957`; ATNEPT `024c37f`, `e412b1b`);
+mass- not mole-weighted mixture properties (ATNEPT `c116d71`); in-place Gauss–Seidel as a
+threading defect (ATURAN `ffd0e0e`); report failures and limits in the README (ATURAN
+`74b4ded`, ATNEPT `34286b8`).
 
 ## Open risks
 
-- **The profile is still prescribed.** `densities()` overwrites `t` with the adiabat every
-  iteration, so the OLR is a real integral over a profile the radiation did not choose.
-  `ThermoAtm::printPlanetaryBalance` prints the lid temperature and emissivity next to the
-  OLR, and flags the case where the two coincide.
+- **The OLR is not independent of `t_skin`.** First thing to fix, and the same task as
+  invariant 3: the profile is prescribed, so radiation cannot set it.
+- **`geothermal_flux` is over half the energy budget** and is ATHAD's magma-ocean number.
+  Nothing quantitative survives it being wrong.
 - **The surface temperature is prescribed, not solved.** Every result is conditional on it.
-- **Boussinesq.** The solver rests on the Boussinesq buoyancy approximation, but density
-  varies by ~2 orders of magnitude across the column. This may force an anelastic or
-  compressible formulation. The family's partial answer is the ATJUP hydrostatic split
-  (ported in ATURAN `302a51e`) — and it did not cure the giants' problem. **Now testable
-  here**: an anelastic projection (`∇·(ρ̄u) = 0`, base state, matching Poisson stencil,
-  zero mass flux at the walls) is implemented behind `ATM_ANELASTIC`, default off. It cuts
-  the anelastic residual 22 % and halves the spurious radial wind in the initial
-  projection; it does *not* change the tracer mass budget, because that was never a
-  transport error (README item 17). Flip the default after a 400-iteration stability run.
-- **The column air mass is not conserved.** `p_stat.x[0]` is re-anchored every iteration to
-  `r_air·R_mix·T_surf`, so the 250 bar column loses ~0.01 % of its mass per iteration as
-  the surface temperature drifts. This is what `waterBudget()` had been reporting as water
-  creation. Anchoring the column to a mass instead is the open task — README item 17.
-- **Deep convection is inactive.** Its trigger thresholds (1000/970/900/800 hPa) are
-  absolute Earth surface pressures and never fire at 250 bar. They need to become
-  fractions of surface pressure.
+- **Rain has nowhere to go.** The sea is a boundary condition, not a reservoir, so the
+  water budget stops being a closed-system test once moist physics starts at iteration 300.
+- **Boussinesq.** `ATM_ANELASTIC` is ported from ATHAD and ships default-off; it has not
+  been measured in this regime. The density span here is ~3 orders of magnitude instead of
+  ~5, which makes this the better testbed for whether it matters at all.
+- **The column air mass is not conserved** (inherited): `p_stat.x[0]` is re-anchored every
+  iteration to `r_air·R_mix·T_surf`.
 - `time_start/end/step` remain because the time-slice loop is still structural, though only
   one slice ever runs.
