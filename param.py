@@ -87,18 +87,28 @@ def main():
 #            ('CategoryIceScheme', 'number chooses Zero(0)-Category Ice Scheme with rain (Warm Rain Scheme)', 'int', 0),
 #            ('CategoryIceScheme', 'number chooses no scheme(-1) no precipitation', 'int', -1),
 
-            # ATHAD: 250 bar = 250000 hPa. NOTE the surface pressure is not actually taken
-            # from p_0 — InitValues/ThermoAtm build it as 1e-2*(r_air*R_Air*T), i.e. from the
-            # reference density — so r_air below must be consistent with this value.
-            ('p_0', 'pressure at sea level in hPa', 'double', 250000.0),
+            # ATHAD_COND: 60 bar = 60000 hPa, the midpoint of the 27-100 bar range. NOTE the
+            # surface pressure is not actually taken from p_0 — ThermoAtm::densities() builds
+            # it as 1e-2*(r_air*R_mix*T), i.e. from the reference density — so r_air below
+            # must be consistent with this value. (The old comment here said R_Air, the
+            # background gas constant; the code has used the full-mixture R_mix since ATHAD's
+            # thermodynamics went in. Corrected rather than carried.)
+            ('p_0', 'pressure at sea level in hPa', 'double', 60000.0),
             ('t_0', 'temperature in K compare to 0°C', 'double', 273.15),
 
-            # ATHAD: the Hadean surface temperature is PRESCRIBED, not read from a
-            # paleo-temperature curve — no Scotese reconstruction reaches 4.4 Ga. A
-            # runaway steam atmosphere at 250 bar is optically thick enough that the
-            # equator-pole contrast is small; 50 K is an assumption, not a result.
-            ('t_surf_equator', 'ATHAD: prescribed Hadean surface temperature at the equator in K', 'double', 1500.0),
-            ('t_surf_pole', 'ATHAD: prescribed Hadean surface temperature at the poles in K', 'double', 1450.0),
+            # ATHAD_COND: the sea-surface temperature is PRESCRIBED, as in ATHAD — no
+            # paleo-temperature curve reaches this epoch. 513.15 K (240 C) is the midpoint of
+            # the stated 230-250 C; the pole is the low end. The 10 K contrast is smaller than
+            # ATHAD's 50 K because a liquid ocean is a far better heat reservoir than a magma
+            # one, but it is an assumption, not a result.
+            #
+            # HARD CONSTRAINT, checked in test/cond_column_selftest.cpp: the surface must stay
+            # below the boiling point at p_0 (548.7 K at 60 bar) or there is no liquid sea to
+            # hold the surface layer at saturation, and the whole Phase 3 boundary condition
+            # is void. At the 27 bar end of the input range water boils at 501.2 K, so a
+            # 503 K surface there has no ocean at all.
+            ('t_surf_equator', 'ATHAD_COND: prescribed sea-surface temperature at the equator in K', 'double', 513.15),
+            ('t_surf_pole', 'ATHAD_COND: prescribed sea-surface temperature at the poles in K', 'double', 503.15),
 
             # ATHAD: the COSMO barometric profile T(h) = T0*sqrt(1 - 2*beta*g*h/(R*T0^2)) has a
             # near-surface lapse rate beta*g/(R*T0), so beta is derived rather than fixed:
@@ -163,10 +173,12 @@ def main():
             # open by -32 W/m2). 0.25 converges in a handful of iterations and is well inside
             # the stability limit, the map being a gentle T^(1/4).
             ('t_skin_relax', 'ATHAD: relaxation of the t_skin fixed point per radiation call; 0 = hold t_skin fixed', 'double', 0.25),
-            # ATHAD reference density of the MIXTURE at the surface, not of dry air:
-            # rho = p/(R_mix*T) = 25e6 Pa / (387.9 * 1500 K) = 42.97 kg/m³ (Earth: 1.2041).
-            # This is what sets the surface pressure, via p = 1e-2*(r_air*R_Air*T).
-            ('r_air', 'ATHAD: reference density of the atmospheric mixture at the surface in kg/m³', 'double', 42.97),
+            # ATHAD_COND reference density of the MIXTURE at the sea surface, not of dry air:
+            # rho = p/(R_mix*T) = 6e6 Pa / (286.6 * 513.15 K) = 40.80 kg/m³ (Earth: 1.2041;
+            # ATHAD: 42.97). Almost exactly ATHAD's, at a quarter of the pressure — the gas
+            # is twice as heavy and three times as cold, and the two nearly cancel.
+            # This is what sets the surface pressure, via p = 1e-2*(r_air*R_mix*T).
+            ('r_air', 'ATHAD_COND: reference density of the atmospheric mixture at the sea surface in kg/m³', 'double', 40.80),
             ('r_0_water', 'reference density of fresh water in kg/m3', 'double', 997.0),
             ('t_equat_modern', 'mean temperature of the modern earth in °C', 'double', 15.4),
 
@@ -383,42 +395,65 @@ def main():
             # grid this puts ~12 cells inside the ABL. ASSUMPTION.
             ('abl_height', 'ATHAD: physical depth of the atmospheric boundary layer in m', 'double', 10000.0),
             # ==================================================================
-            # ATHAD atmospheric composition — MOLE fractions of the Hadean mixture.
-            # The residual 7% beyond H2O/CO2/N2 is split evenly across five trace gases.
-            # These are the INPUT; MixtureAtm.h derives the mass fractions and the
-            # mixture gas constant from them and checks they sum to 1.
+            # ATHAD_COND atmospheric composition — MOLE fractions AT THE SEA SURFACE.
+            #
+            # These are NOT the numbers the literature quotes for this epoch. The quoted
+            # composition — H2O 0.4-2 %, CO2 89-95 %, N2 5-20 % — is the DRY atmosphere,
+            # what survives above the cold trap. The air in contact with a 240 C ocean
+            # carries water at its own vapour pressure instead: p_sat(513.15 K) = 33.47 bar
+            # of a 60 bar column, so x_H2O = 0.5578 at the surface, fifty-five times the
+            # dry figure, and CO2 and N2 are diluted in their dry ratio to fit.
+            #
+            # The two are consistent once separated by height, and the column runs between
+            # them; test/cond_column_selftest.cpp asserts both mixtures and the arithmetic
+            # that connects them. Change these and that test fails, which is the point.
+            #
+            # The five trace gases of ATHAD's reducing mixture are gone: the epoch this
+            # models is oxidised and degassed, and CH4/NH3/H2/CO/SO2 are not part of the
+            # stated composition. They stay as parameters, at zero, because MixtureAtm's
+            # background pseudo-species still needs somewhere to put anything added later.
             # ==================================================================
-            ('x_H2O', 'ATHAD: mole fraction of H2O', 'double', 0.800),
-            ('x_CO2', 'ATHAD: mole fraction of CO2', 'double', 0.100),
-            ('x_N2',  'ATHAD: mole fraction of N2',  'double', 0.030),
-            ('x_CH4', 'ATHAD: mole fraction of CH4', 'double', 0.014),
-            ('x_NH3', 'ATHAD: mole fraction of NH3', 'double', 0.014),
-            ('x_H2',  'ATHAD: mole fraction of H2',  'double', 0.014),
-            ('x_CO',  'ATHAD: mole fraction of CO',  'double', 0.014),
-            ('x_SO2', 'ATHAD: mole fraction of SO2', 'double', 0.014),
+            ('x_H2O', 'ATHAD_COND: mole fraction of H2O at the sea surface (saturated: p_sat(T_surf)/p_0)', 'double', 0.5578),
+            ('x_CO2', 'ATHAD_COND: mole fraction of CO2 at the sea surface', 'double', 0.4109),
+            ('x_N2',  'ATHAD_COND: mole fraction of N2 at the sea surface',  'double', 0.0313),
+            ('x_CH4', 'ATHAD_COND: mole fraction of CH4', 'double', 0.0),
+            ('x_NH3', 'ATHAD_COND: mole fraction of NH3', 'double', 0.0),
+            ('x_H2',  'ATHAD_COND: mole fraction of H2',  'double', 0.0),
+            ('x_CO',  'ATHAD_COND: mole fraction of CO',  'double', 0.0),
+            ('x_SO2', 'ATHAD_COND: mole fraction of SO2', 'double', 0.0),
 
-            # ep = R_background / R_H2O = 317.3/461.5. NOTE: the dilute approximation this
-            # constant serves, q_sat = ep*E/(p-(1-ep)*E), is INVALID here because H2O is the
-            # bulk gas, not a trace. Phase 4 replaces it with the exact mass-fraction form;
-            # ep remains only where a genuine gas-constant ratio is wanted.
-            ('ep', 'ATHAD: ratio of the background-mixture to water-vapour gas constants', 'double', 0.6875),
+            # ep = R_background / R_H2O = 296.8/461.5. NOTE: the dilute approximation this
+            # constant serves, q_sat = ep*E/(p-(1-ep)*E), is INVALID here for the same reason
+            # it was invalid in ATHAD and NOT for the opposite one: water is 0.4 % by mole
+            # above the cold trap, where the dilute form would be fine, but 56 % at the sea
+            # surface, where it is not. A form that is valid over part of the column is worse
+            # than one that is valid over none, because it looks right in the printouts.
+            # The exact mass-fraction form is used everywhere; ep remains only where a
+            # genuine gas-constant ratio is wanted.
+            ('ep', 'ATHAD_COND: ratio of the background-mixture to water-vapour gas constants', 'double', 0.6431),
             ('hp', 'water vapour pressure at T = 0°C: E = 6.1 hPa', 'double', 6.1078),
 
-            # ATHAD: "Air" now means the NON-CONDENSABLE BACKGROUND (everything but H2O and
-            # CO2): x_bg = 0.100, M_bg = 26.207 g/mol -> R_bg = 317.3 J/(kg K). It is not air.
-            ('R_Air', 'ATHAD: specific gas constant of the non-condensable background in J/(kg*K)', 'double', 317.3),
+            # ATHAD_COND: "Air" means the NON-CONDENSABLE BACKGROUND (everything but H2O and
+            # CO2). With the five reducing trace gases gone that background is N2 alone:
+            # M_bg = 28.014 g/mol -> R_bg = 296.8 J/(kg K). It is not air, and the fact that
+            # it now coincides with the gas constant of N2 is arithmetic, not a return to
+            # Earth. The quantity that matters for saturation is M_nonwater (CO2 + background,
+            # 42.88 g/mol here), which is a different number and a different function.
+            ('R_Air', 'ATHAD_COND: specific gas constant of the non-condensable background in J/(kg*K)', 'double', 296.8),
             ('R_WaterVapour', 'specific gas constant of water vapour in J/(kg*K)', 'double', 461.5),
             ('r_water_vapour', 'density of saturated water vapour in kg/m³ at 10°C', 'double', 0.0094),
             ('R_co2', 'specific gas constant of CO2 in J/(kg*K)', 'double', 188.9),
             ('lv', 'specific latent evaporation heat(condensation heat) in J/kg', 'double', 2.52e6),
             ('ls', 'specific latent vaporisation heat(sublimation heat) in J/kg', 'double', 2.83e6),
 
-            # ATHAD: cp of the MIXTURE at Hadean temperatures, ~2x Earth's 1005. Mass-weighted
-            # from H2O ~2400, CO2 ~1280, background ~1300 J/(kg K) at 1000-1500 K. This constant
-            # is the fallback; MixtureAtm::cp_of() gives the local, temperature-dependent value.
-            # cv_l = cp_l - R_mix = 2040 - 387.9.
-            ('cp_l', 'ATHAD: specific heat capacity of the mixture at constant pressure in J/(kg K)', 'double', 2040.0),
-            ('cv_l', 'ATHAD: specific heat capacity of the mixture at constant volume in J/(kg K)', 'double', 1652.1),
+            # ATHAD_COND: cp of the MIXTURE at the sea surface, 1349 J/(kg K) from
+            # MixtureAtm::cp_of at 513 K on the saturated composition — one third of ATHAD's
+            # 2040 and, by coincidence, close to Earth's 1005. It varies by 25 % across the
+            # column, from 1349 at the wet surface to 1028 in the dry CO2 air aloft, so this
+            # constant is only the fallback; cp_of() gives the local value.
+            # cv_l = cp_l - R_mix = 1349 - 286.6.
+            ('cp_l', 'ATHAD_COND: specific heat capacity of the mixture at constant pressure in J/(kg K)', 'double', 1349.0),
+            ('cv_l', 'ATHAD_COND: specific heat capacity of the mixture at constant volume in J/(kg K)', 'double', 1062.4),
             ('lamda', 'heat transfer coefficient of air in W/(m K)', 'double', 0.0262),
             ('r_co2', 'density of CO2 in kg/m³ at 25°C', 'double', 0.0019767),
             ('gam', 'constant slope of temperature    gam = 6.5 K/1000 m', 'double', 0.0065),
@@ -450,16 +485,29 @@ def main():
             ('t_00', 'temperature in K compare to -37°C', 'double', 236.15),
             ('t_000', 'temperature in K compare to -20°C', 'double', 253.15),
             ('s_0', 'entropy at 0°C, cp_l * t_0 in J/kg', 'double', 274515.75),
-            # ATHAD: the water-vapour scale is the Hadean mass fraction q_H2O = 0.6724, not
-            # Earth's 0.035 trace. c_0 is a normalisation in the RHS energy/moisture
-            # coefficients (RHS_Atm_Turb.cpp: coeff_energy, coeff_MC_q, coeff_L).
-            ('c_0', 'ATHAD: reference water vapour mass fraction in kg/kg', 'double', 0.6724),
+            # ATHAD_COND: the water-vapour scale is the SEA-SURFACE mass fraction
+            # q_H2O = 0.3464 (saturated at 513 K / 60 bar), not Earth's 0.035 trace and not
+            # ATHAD's 0.6724. c_0 is a normalisation in the RHS energy/moisture coefficients
+            # (RHS_Atm_Turb.cpp: coeff_energy, coeff_MC_q, coeff_L) and, unlike in ATHAD, it
+            # is NOT the value the field is initialised to: the water field is a profile
+            # here, running from c_0 at the sea to c_h2o_dry_top above the cold trap.
+            ('c_0', 'ATHAD_COND: reference water vapour mass fraction at the sea surface in kg/kg', 'double', 0.3464),
 
-            # ATHAD: the CO2 field is a MASS FRACTION, not ppm. At 20.5% by mass, ppm is
-            # meaningless. The Hadean has no biosphere, no vegetation and no carbonate ocean
-            # sink, so CO2 is simply well mixed — the Earth surface-source/tropopause-sink
-            # parabola and the vegetation/ocean/land ppm budgets have no subject here.
-            ('co2_0', 'ATHAD: reference CO2 mass fraction in kg/kg', 'double', 0.2053),
+            # ATHAD_COND: the water that survives above the cold trap, as a MASS fraction.
+            # This is the model's link to the quoted composition: the literature's "H2O
+            # 0.4-2 % by mole" is the DRY atmosphere, x_H2O = 0.010 of a CO2/N2 mixture of
+            # 42.63 g/mol, i.e. q = 0.00423 kg/kg. initWaterWapour() uses it as the floor
+            # under the saturation profile, and the height at which the two cross IS the
+            # cold trap — a computed quantity, not a prescribed level.
+            ('c_h2o_dry_top', 'ATHAD_COND: water vapour mass fraction above the cold trap in kg/kg', 'double', 0.00423),
+
+            # ATHAD_COND: the CO2 field is a MASS FRACTION, not ppm. At 62% by mass at the
+            # sea surface, ppm is meaningless. This epoch has no biosphere and no vegetation;
+            # it does have an ocean, and therefore in reality a carbonate sink — but that sink
+            # is a hydrosphere process and there is no hydrosphere here, so CO2 remains well
+            # mixed and conserved, and that is an ASSUMPTION this model makes rather than a
+            # result it derives. q_CO2 = 0.4109*44.010/29.009 = 0.6233 at the surface.
+            ('co2_0', 'ATHAD_COND: reference CO2 mass fraction at the sea surface in kg/kg', 'double', 0.6233),
             ('co2_scale', 'multiplier applied to the whole CO2 field for sensitivity experiments (1.0 = field as built; 2.0 = doubled CO2)', 'double', 1.0),
 
             # ATHAD: no land, so no land/ocean humidity split — a single surface relative

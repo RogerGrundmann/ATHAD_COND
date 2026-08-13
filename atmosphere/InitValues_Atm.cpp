@@ -854,24 +854,51 @@ void cAtmosphereModel::initWaterWapour() {
         for (int k = 0; k < km; k++) {
             int i_mount = i_topography[j][k];
 
-            // ATHAD: water vapour is WELL MIXED at its composition mass fraction.
+            // ATHAD_COND: water vapour is a SATURATION PROFILE over a dry-atmosphere floor.
             //
-            // The Earth version set c to a fraction of the local saturation mixing ratio,
-            // because on Earth water vapour is a condensable trace whose abundance IS set
-            // by saturation. Here it is 67 % of the atmosphere's mass and, below the
-            // condensation level, supercritical — there is no saturation to be a fraction
-            // of. Evaluating the Magnus formula at 1500 K returns E_sat ~ 1.2e7 hPa, far
-            // above the 250 bar total pressure, so the q_sat branch collapsed to its
-            // fallback and the surface scheme then drove c to 20.8 — a mass fraction twenty
-            // times larger than all the mass present.
+            // ATHAD initialised c uniform at the composition mass fraction, because there
+            // water is supercritical from the ground to ~177 km and there is no saturation
+            // curve to follow. Here there is: the air over a 240 C sea is saturated, and
+            // q_sat falls by two orders of magnitude up the column. A uniform field would
+            // put 35 % water by mass at 60 km, where the saturation adjustment would
+            // condense essentially all of it on the first iteration — a manufactured global
+            // cloud of the kind ATHAD spent item 9 removing, arrived at from the other side.
             //
-            // So c is initialised exactly as co2 is: uniform at the configured value. Where
-            // the column does rise above the condensation level (T < 647 K, the top ~50 km),
-            // the saturation adjustment will draw it down — once Phase 4 gives it a
-            // saturation curve that is valid there.
+            //     c(i) = max( min_{0..i} q_sat(T, p),  c_h2o_dry_top )
+            //
+            // The floor is the water that survives above the cold trap — the literature's
+            // 0.4-2 % by mole of the dry CO2/N2 mixture. Below the crossing the column is
+            // saturated and the profile is set by temperature; above it the column is dry
+            // and the profile is set by composition. THE CROSSING IS NOT PRESCRIBED: it is
+            // wherever the two curves meet, which makes the cold-trap height a computed
+            // diagnostic of this model rather than one of its inputs.
+            //
+            // The RUNNING MINIMUM is not decoration, and the first version of this loop got
+            // it wrong. saturationMassFraction returns 1.0 when E >= p — "no condensation
+            // limit", the value ATHAD needs above the critical point — and above ~75 km the
+            // pressure has collapsed far enough that p_sat(254 K) exceeds it, so q_sat comes
+            // back as 1.0. A plain max() then read that as "the air is pure water" and filled
+            // the top 200 km of the domain with q_H2O = 1.0 and R = 356.9. The running
+            // minimum is also the physics: a parcel's water content is set by the driest
+            // point it has passed through, which is what a cold trap is.
+            //
+            // Note the saturation call takes M_nonwater (CO2 + background, 42.88 g/mol),
+            // NOT M_bg (N2 alone, 28.014). The two differ by 53 % here, and using M_bg puts
+            // the sea surface at q_sat = 0.448 against the true 0.346 — a 29 % error in the
+            // one quantity this model turns on. ATHAD's M_nonwater carried exactly this
+            // confusion until it was fixed there; the fix matters here.
             (void)i_mount;
+            const double M_nw = AtmMixture::M_nonwater(c_0, co2_0, m_comp.M_bg);
+            double q_sat_min  = 1.0;                                    // cold-trap minimum so far
+
             for (int i = 0; i < im; i++) {
-                c.x[i][j][k]     = c_0;
+                const double T_i = t.x[i][j][k] * t_0;                  // [K]
+                const double p_i = p_stat.x[i][j][k];                   // [hPa]
+
+                const double q_s = SaturationH2O::saturationMassFractionAt(T_i, p_i, M_nw);
+                if (q_s < q_sat_min) q_sat_min = q_s;
+
+                c.x[i][j][k]     = std::max(q_sat_min, c_h2o_dry_top);
                 cloud.x[i][j][k] = 0.0;
             }
         }

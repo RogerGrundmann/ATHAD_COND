@@ -50,12 +50,19 @@ analyze:
 
 # Self-tests. These build standalone against the headers — no model state, no config —
 # so they are cheap to run and safe to run first.
-.PHONY: test test-saturation
-test: test-saturation
+.PHONY: test test-saturation test-cond-column
+test: test-saturation test-cond-column
 
 test-saturation:
 	$(CXX) -std=c++17 -Iatmosphere -Ilib -o test/saturation_selftest test/saturation_selftest.cpp
 	./test/saturation_selftest
+
+# The ATHAD_COND regime itself: the saturated sea surface, the two mixtures the column
+# runs between, and the reason the dry adiabat cannot be used here. The config's
+# composition and r_air are derived from these numbers, so this test guards them.
+test-cond-column:
+	$(CXX) -std=c++17 -Iatmosphere -Ilib -o test/cond_column_selftest test/cond_column_selftest.cpp
+	./test/cond_column_selftest
 
 python: libcond.a python/pycond.so
 

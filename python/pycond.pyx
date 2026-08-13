@@ -972,6 +972,15 @@ cdef class Atmosphere:
             self._check_alive()
             self._thisptr.c_0 = <double> value
     
+    property c_h2o_dry_top:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.c_h2o_dry_top
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.c_h2o_dry_top = <double> value
+    
     property co2_0:
         def __get__(Atmosphere self):
             self._check_alive()

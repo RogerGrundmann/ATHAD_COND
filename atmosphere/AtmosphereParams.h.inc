@@ -104,6 +104,7 @@ double t_00;
 double t_000;
 double s_0;
 double c_0;
+double c_h2o_dry_top;
 double co2_0;
 double co2_scale;
 double c_ocean;

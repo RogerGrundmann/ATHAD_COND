@@ -109,6 +109,7 @@
     Config::FillDoubleWithElement(elem_atmosphere, "t_000", t_000);
     Config::FillDoubleWithElement(elem_atmosphere, "s_0", s_0);
     Config::FillDoubleWithElement(elem_atmosphere, "c_0", c_0);
+    Config::FillDoubleWithElement(elem_atmosphere, "c_h2o_dry_top", c_h2o_dry_top);
     Config::FillDoubleWithElement(elem_atmosphere, "co2_0", co2_0);
     Config::FillDoubleWithElement(elem_atmosphere, "co2_scale", co2_scale);
     Config::FillDoubleWithElement(elem_atmosphere, "c_ocean", c_ocean);

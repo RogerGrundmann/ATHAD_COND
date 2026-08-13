@@ -796,18 +796,46 @@ public:
         using namespace std;
         cout << endl << endl << endl << "      AGCM: co2_atmosphere" << endl;
 
-        const double co2_ref = m.co2_0 * m.co2_scale;                   // [kg/kg]
+        const double co2_ref = m.co2_0 * m.co2_scale;                   // [kg/kg] at the sea
+
+        // ATHAD_COND: "well mixed" is a statement about the DRY air, not about the
+        // mass fraction.
+        //
+        // ATHAD set co2 to one uniform mass fraction everywhere, and that was right there:
+        // its water field is uniform too, so a uniform CO2 mass fraction and a uniform
+        // CO2:background ratio are the same statement. Here the water mass fraction runs
+        // from 0.346 at the sea to 0.004 above the cold trap, and the two statements come
+        // apart. Holding the MASS fraction uniform would mean the non-water air changes
+        // composition with height — the background would have to make up all 0.34 of the
+        // mass the water vacates — and the column's gas constant then settles at 230 J/(kg K)
+        // aloft instead of the 195 the dry composition actually has. An 18 % error in R
+        // through the entire upper atmosphere, from a field that is not supposed to have
+        // any structure at all.
+        //
+        // What is physically well mixed is the CO2:background MOLE ratio, and since that
+        // ratio is fixed, so is their mass ratio within the dry air:
+        //
+        //     q_CO2(i) = (1 - c(i)) * f_CO2,     f_CO2 = q_CO2 / (q_CO2 + q_bg) at the sea
+        //
+        // This keeps CO2 a passive, source-free tracer — the conservation test in
+        // co2Column() is unchanged — while making the dry mixture it belongs to uniform,
+        // which is the thing that was meant. The uniformity diagnostic has to change with
+        // it: min == max on co2 was ATHAD's test, and here the invariant is that
+        // co2/(1-c) is constant instead.
+        const double f_CO2 = (m.m_comp.q_CO2 + m.m_comp.q_bg > 0.0)
+                           ? m.m_comp.q_CO2 / (m.m_comp.q_CO2 + m.m_comp.q_bg)
+                           : co2_ref;
 
         #pragma omp parallel for collapse(2) schedule(static)
         for (int j = 0; j < m.jm; j++)
             for (int k = 0; k < m.km; k++)
                 for (int i = 0; i < m.im; i++)
-                    m.co2.x[i][j][k] = co2_ref;
+                    m.co2.x[i][j][k] = (1.0 - m.c.x[i][j][k]) * f_CO2 * m.co2_scale;
 
         cout.precision(6);
-        cout << "      AGCM: co2 well mixed at " << co2_ref
-             << " kg/kg (co2_0 = " << m.co2_0
-             << ", co2_scale = " << m.co2_scale << ")" << endl;
+        cout << "      AGCM: co2 well mixed in the DRY air at f_CO2 = " << f_CO2
+             << " kg/kg of non-water (co2_0 = " << m.co2_0
+             << " at the sea, co2_scale = " << m.co2_scale << ")" << endl;
         cout << "      AGCM: co2_atmosphere ended" << endl;
     }
 
