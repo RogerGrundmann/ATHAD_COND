@@ -25,6 +25,12 @@ make test                                       # IAPWS + column self-tests, run
 cd python && OMP_NUM_THREADS=8 ../cli/cond config_cond.xml
 ```
 
+**`atom_log.txt` is reserved by the model — never redirect a run into it.**
+`lib/Utils.cpp:45` opens `atom_log.txt` in the run directory with `std::ofstream::out`,
+which truncates it. A shell redirect to the same name loses the whole console output when
+the model's handle closes; a 100-iteration run's printouts were destroyed this way. Use any
+other filename.
+
 Output lands in `python/output_Hadean_condensation/` — the ATOM line's convention
 (`output_<name>/`, underscore, relative to the run directory; the giant-planet
 siblings hyphenate instead).
