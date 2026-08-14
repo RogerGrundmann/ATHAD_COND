@@ -28,6 +28,15 @@ cli/output_Hadean*/
 atm_log.txt
 atom_log.txt
 
+# Console logs of individual runs. atom_log.txt is RESERVED — the model opens it
+# itself and truncates it, so a shell redirect to that name destroys the run's
+# output; redirect to run_<something>.log instead.
+run_*.log
+
+# One-off configs for a particular run length or experiment. The generated
+# config_cond.xml in cli/ and python/ stays tracked; these variants do not.
+config_cond_*.xml
+
 # Executables
 cli/cond
 test/rad_selftest
