@@ -219,6 +219,23 @@ is well mixed is the CO₂:background ratio *within the dry air*.
   100/120/140 km, no thread-determinism check. ATHAD's experience says 400 iterations is a
   stability check and not a convergence check — its meridional wind was still in free
   acceleration at 400, with the pressure gradient at 1.8 % of the Coriolis term.
+- **There is no balanced initial state here, and the one next door must not be ported as
+  first written.** ATHAD found that its prescribed circulation is buried within ~5 iterations
+  by an unopposed Coriolis torque and built `initBalancedState` against it (its items 26-28);
+  this model has neither the fix nor a measurement of whether it has the problem. **The
+  caution is specific**: item 27's version balances the θ-momentum equation alone, and with
+  the switch defaults this model shares — `coriolis_nontraditional()` and
+  `metric_curvature()` both false, `buoyancy_ramp` = 0 at iteration 0 — the radial equation
+  is `rhs_u = −dp_dyn/dr·exp_rm` and nothing else, so its radial gradient is an unopposed
+  vertical force. In ATHAD it drove `max |u|` from 0.114 to 11.17 m/s over 200 iterations
+  with the tropics sinking, while the meridional streamfunction, built from `v` alone,
+  reported the cell as healthy. Port item 28's two-component version with its residual
+  diagnostic, or nothing. See CLAUDE.md, *Relationship to the family*.
+- **A term written in `RHS_Atm_Turb.cpp` is not necessarily a term the model applies.** The
+  above is the first instance found of this shape — the Earth-constant pattern one level up,
+  a code path gated off by a default switch — and it is worth expecting again, because a
+  balance, a diagnostic or a budget derived from the source as written will silently disagree
+  with the model as configured.
 - **Inherited unchanged from ATHAD**: the column air mass is not conserved (`p_stat.x[0]`
   re-anchored every iteration); the `c ≤ 1 − co2` ceiling deletes water; `ATM_ANELASTIC`
   ships default-off and has not been measured in this regime, where the density span is

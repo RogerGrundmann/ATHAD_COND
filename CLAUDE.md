@@ -166,6 +166,51 @@ nothing; here it selects everything above 53 km and fires the deep-convection sc
 stratosphere. When something behaves oddly, look for a constant that was true at 1 bar and
 288 K — and do not assume that a branch which now *runs* is therefore correct.
 
+**⚠️ DO NOT CHERRY-PICK ATHAD'S BALANCED INITIAL STATE AS IT WAS FIRST WRITTEN.** ATHAD
+items 26-28 build a `initBalancedState` that this model does not have. Item 27's version
+balances the **θ-momentum equation only**, and porting it here would reproduce a failure
+ATHAD measured in full: it drove `max |u|` from 0.114 to **11.17 m/s** over 200 iterations,
+reversed the tropics to sinking over the hottest surface on the planet, and the meridional
+streamfunction — **which is built from `v` alone and therefore cannot see a radial failure**
+— reported the circulation as healthy throughout. The streamfunction here was just repaired
+(`a85122c`, the density inside the integral); that fixes what it measures, not what it is
+blind to.
+
+The reason it fails is a **switch**, and this model has the identical one. At `u = v = 0`:
+
+| | ATHAD | here |
+|---|---|---|
+| `rhs_u` | `RHS_Atm_Turb.cpp:1001` | line 1001, identical |
+| `AtomUtils::coriolis_nontraditional()` (gates `coriolis_rad`) | default **false** | `lib/Utils.h:52`, default **false** |
+| `AtomUtils::metric_curvature()` (gates the `−(v²+w²)/r` term) | default **false** | `lib/Utils.h:90`, default **false** |
+| `buoyancy_ramp` at iteration 0 | **0** (`buoyancy_ramp_iters` = 300) | **0**, same 300 |
+| `ATM_METRIC_RADIUS` | default on | default on |
+
+So the radial momentum equation at iteration 0 is `rhs_u = −dp_dyn/dr·exp_rm` **and nothing
+else**, and any radial gradient a balance writes is a pure unopposed vertical force. The
+same switch governs the `w²cotθ` term item 27's θ-balance is *built on*, so with the
+defaults that balance is also computed against a force the model does not apply — though
+that part is worth only 0.3 % of `F_θ` (both balances are ~99.7 % Coriolis).
+
+**And turning the switch on does not fix it**, which was worth testing before assuming:
+with `ATOM_METRIC_CURVATURE=1` the radial equation gains a force of 0.075 rms against the
+~293 a θ-only balance creates — **~4000× too small**. The θ-force's shape varies with height
+because `w` does, and no radial force of comparable size exists to pay for that variation.
+Completing the metric does not rescue a one-component balance; only balancing both does.
+
+**The lesson generalises past the balance, and is the reason this note is here rather than
+in a commit message: a term written in `RHS_Atm_Turb.cpp` is not necessarily a term the
+model applies.** Read the switch, not just the source. This is the family's constant trap
+one level up — not an Earth number in a kernel, an Earth-tested code path that never runs.
+
+If the balance is ported later, port **ATHAD item 28's two-component version** (it minimises
+the unbalanced acceleration in both equations at once and reads `F_r`/`F_θ` switch by switch,
+so it follows whatever this model is configured to do) **together with its residual
+diagnostic**, which prints what each component is left holding. There is no version of "port
+item 27 now and fix it after". Whether a balanced initial state helps here **at all** is a
+separate question needing its own A/B in this regime — 120 km shell, saturated sea — and
+ATHAD's own 200-iteration confirmation was still running when this was written (2026-08-15).
+
 Fixes made here that belong upstream in ATHAD: the exact `dqSatdT` (ATHAD's dilute form is
 correct only in the `x → 0` limit, and ATHAD's water is not dilute either — it is the bulk
 gas, so the error there is larger, not smaller); `moistLapse`; and the `M_bg`/`M_nonwater`
