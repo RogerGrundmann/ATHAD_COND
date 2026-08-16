@@ -235,6 +235,16 @@ Every number in this file measured before the fix moves in its last digits.
 thread-count-dependent order and `+` is not associative. Curing it needs ordered reductions,
 as in ATHAD.
 
+**What reproducibility bought immediately.** The cell-structure port could not be verified
+when it landed — there was nothing to compare against, because two runs of the same binary
+already disagreed at ~1e-3. With the races cured the check is possible and it passes: a
+pre-port binary *carrying the same race fixes* against the ported one, both at Earth
+settings (`cell_lat_scale` 1.0, `n_cells_hemisphere` 3), 20 iterations, 24 threads, agree in
+**every number of the entire log**. The only lines that differ are the three diagnostics the
+port adds. That is the verification the port's own commit message said it could not make,
+and it is a fair illustration of what a race costs: not just wrong answers, but the loss of
+the instrument you would use to detect them.
+
 ## Remaining work
 
 - **The OLR is not independent of `t_skin`** (item 6). This is the first thing to fix and
