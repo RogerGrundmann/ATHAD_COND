@@ -621,6 +621,33 @@ cdef class Atmosphere:
             self._check_alive()
             self._thisptr.tropopause_equator = <double> value
     
+    property cell_lat_scale:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.cell_lat_scale
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.cell_lat_scale = <double> value
+    
+    property cell_amp_mode:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.cell_amp_mode
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.cell_amp_mode = <int> value
+    
+    property n_cells_hemisphere:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.n_cells_hemisphere
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.n_cells_hemisphere = <int> value
+    
     property albedo_surface:
         def __get__(Atmosphere self):
             self._check_alive()

@@ -70,6 +70,9 @@
     Config::FillDoubleWithElement(elem_atmosphere, "zeta", zeta);
     Config::FillDoubleWithElement(elem_atmosphere, "tropopause_pole", tropopause_pole);
     Config::FillDoubleWithElement(elem_atmosphere, "tropopause_equator", tropopause_equator);
+    Config::FillDoubleWithElement(elem_atmosphere, "cell_lat_scale", cell_lat_scale);
+    Config::FillIntWithElement(elem_atmosphere, "cell_amp_mode", cell_amp_mode);
+    Config::FillIntWithElement(elem_atmosphere, "n_cells_hemisphere", n_cells_hemisphere);
     Config::FillDoubleWithElement(elem_atmosphere, "albedo_surface", albedo_surface);
     Config::FillDoubleWithElement(elem_atmosphere, "albedo_cloud", albedo_cloud);
     Config::FillDoubleWithElement(elem_atmosphere, "epsilon_equator", epsilon_equator);

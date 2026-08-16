@@ -387,6 +387,47 @@ def main():
             ('tropopause_equator', 'ATHAD: top of the convective column at the equator in m', 'double', 207000.0),
 
 
+            # ATHAD_COND circulation-cell layout. Ported from ATHAD (its items 31-38) with
+            # the MECHANISM copied and every NUMBER re-derived, because the two models are
+            # not in the same regime:
+            #
+            #                  scale height   dtheta/theta      Ro_T     Held-Hou edge
+            #     Earth            8.4 km     45/288  = 0.156   5.96e-2     18.1 deg
+            #     ATHAD           59.3 km     50/1500 = 0.033   4.75e-3      5.1 deg
+            #     ATHAD_COND      15.0 km     10/513  = 0.0195  7.03e-4      2.0 deg
+            #
+            # Ro_T = g*H*(dtheta/theta)/(omega^2 a^2). Condensation cost this atmosphere
+            # both terms: the sea-surface contrast is 10 K rather than 50, and the column
+            # collapsed from 59.3 km of scale height to 15.0. Rotation is unchanged, so
+            # Ro_T falls a further 6.8x below ATHAD's and 85x below Earth's, and the direct
+            # cell is narrower again -- 2.0 deg against ATHAD's 5.1.
+            #
+            #   cell_lat_scale = 0.11, from 1.96/18.06 (Held-Hou edge, this model against
+            #   Earth's). ATHAD's 0.33 is ATHAD's number and would be 3x too wide here.
+            #   CAVEAT: it puts the Hadley EDGE at 30*0.11 = 3.3 deg, which is three points
+            #   on a 1 deg grid. The direct cell is marginally resolved and that is a grid
+            #   statement, not a physical one -- if it matters, the fix is resolution, not
+            #   a wider prescribed cell.
+            #
+            #   n_cells_hemisphere = 5, from THIS model's own emergent wind. Rhines
+            #   L_beta = pi*sqrt(2U/beta) with beta = 2*omega*cos(phi)/a and the measured
+            #   U = 20.2 m/s (max zonal at iteration 100) gives a 21.4 deg band at 45 deg,
+            #   so (90 - 3.3)/21.4 = 4.1 extratropical bands plus the direct cell -> 5.1.
+            #   ATHAD reaches the same count from U = 21.4 and a 9.9 deg Hadley edge, which
+            #   is a coincidence of two different roads, not a shared derivation.
+            #
+            #   cell_amp_mode = 0, as in ATHAD. Unmeasured here.
+            #
+            # THE SAME CAVEAT APPLIES AS IN ATHAD, and if anything harder: n sets the
+            # structure the model is HANDED, not one it can generate. Nothing here
+            # maintains an indirect cell. Set cell_lat_scale 1.0 and n_cells_hemisphere 3
+            # to recover Earth's layout, which is what everything in this repo before this
+            # commit was measured on.
+            ('cell_lat_scale', 'ATHAD_COND: Hadley-edge latitude as a fraction of Earth\'s; 0.11 = Held-Hou edge for this rotation rate and contrast, 1.0 = Earth', 'double', 0.11),
+            ('cell_amp_mode', 'ATHAD_COND: scale the prescribed velocity amplitudes with cell_lat_scale; 0 = off, 1 = v,w by s (continuity), 2 = v by s and w by s^2 (angular momentum)', 'int', 0),
+            ('n_cells_hemisphere', 'ATHAD_COND: prescribed circulation cells per hemisphere; 5 = this regime (Rhines ~21 deg bands), 3 = Earth', 'int', 5),
+
+
             # ATHAD albedo. These replace the inherited albedo_pole/albedo_equator, which
             # were INERT — MultiLayerRadiation built its own albedo from bare literals and
             # never read them, so the pole/equator pair was configuration theatre.
