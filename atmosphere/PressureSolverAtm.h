@@ -182,8 +182,50 @@ public:
         // they do, rather than leaving it to be assumed either way.
         long n_src_clamped = 0, n_src_cells = 0;
 
+        // ==================================================================
+        // THE RELAXATION IS RED-BLACK, AND WAS NOT ALWAYS.
+        //
+        // Each solve is two passes over a checkerboard colouring of (i+j+k): every cell of
+        // one colour has all six of its stencil neighbours in the other, so within a pass
+        // nothing is read while it is being written.
+        //
+        // This replaced `#pragma omp parallel for collapse(2) schedule(dynamic, 4)` over
+        // (i,j) writing p_dyn IN PLACE while reading p_dyn[i±1][j±1] — over the very two
+        // indices the stencil reads across. Cell (i,j,k) was read by the thread owning
+        // (i+1,j) or (i,j+1) while its owner was writing it, and schedule(dynamic) made it
+        // worse than a thread-count dependence: which thread got which chunk varied with
+        // timing, so the SAME binary at the SAME thread count gave different answers RUN TO
+        // RUN. Measured here before the fix, two runs of one binary at 24 threads, one
+        // iteration: max u-component 0.080795 against 0.080751, the extremum wandering in
+        // longitude and hemisphere. The varying cell sat at 37905 m, i ~ 39 of 61 —
+        // interior, which is where an in-place stencil race puts it and not where a
+        // boundary defect would.
+        //
+        // Red-black rather than Jacobi because of what the old loop was reaching for: k runs
+        // serially inside a thread, so k-1 is current and k+1 one sweep old, i.e.
+        // lexicographic Gauss-Seidel — correct in serial, broken only by the (i,j)
+        // parallelism. Jacobi would have been the easier fix and would have cost the
+        // convergence rate. The colour is selected with a `continue` rather than by striding
+        // k, because the k loop carries a sliding window over the land mask that assumes
+        // consecutive k.
+        //
+        // Ported from ATHAD, which took it from the family's shared PressureSolver.h
+        // (ATURAN `ffd0e0e` diagnosed the same defect and cured it by serialising, which was
+        // right there — its computePressure is 0.003 s of a 5.3 s step; here the projection
+        // is far too expensive for that).
+        //
+        // NOTE this does NOT reproduce the old 1-thread answer: red-black is a different
+        // sweep order from lexicographic Gauss-Seidel, so it converges to the same solution
+        // by a different path. Every measurement in this repo taken before this commit moves
+        // in its last digits.
+        //
+        // The two colours together visit each cell exactly once, so the clamp counters below
+        // are not double-counted.
+        // ==================================================================
+        for (int colour = 0; colour < 2; colour++) {
+
         // Main compute loop — land mask lookups + hoisted j-invariants + k sliding window
-        #pragma omp parallel for collapse(2) schedule(dynamic, 4) \
+        #pragma omp parallel for collapse(2) schedule(static) \
                 reduction(+:n_src_clamped,n_src_cells)
         for (int i = 1; i < m.im-1; i++) {
             for (int j = 1; j < m.jm-1; j++) {
@@ -249,6 +291,10 @@ public:
 
                     lnd_k0 = lnd_k1;
                     lnd_k1 = lnd_kp1;
+
+                    // Cells of the other colour are skipped AFTER the window bookkeeping
+                    // above — lnd_k0/lnd_k1 slide with k and assume every k is visited.
+                    if (((i + j + k) & 1) != colour) continue;
 
                     double du_dr, dv_dthe, dw_dphi;
                     bool r_flag   = false;
@@ -436,6 +482,8 @@ public:
                 } // k
             } // j
         } // i
+
+        } // colour
 
         #undef LAND
 

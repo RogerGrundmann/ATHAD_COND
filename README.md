@@ -200,6 +200,41 @@ water vacates, and R settles at 230 J/(kg·K) aloft instead of 195 — an 18 % e
 the whole upper atmosphere, from the one field that is supposed to have no structure. What
 is well mixed is the CO₂:background ratio *within the dry air*.
 
+## Reproducibility
+
+**Run-to-run bit-identical at a fixed thread count; thread-count dependent at ~1e-8.**
+Measured at 24 threads, three one-iteration runs identical in every number, and at 20
+iterations 24 threads against 8 agree in every wind extremum and differ in the last digit
+of `residuum_atm` (0.77593489 against 0.77593490).
+
+**It was not always.** Until the race fix ported from ATHAD (its item 18), two runs of the
+*same* binary at the *same* thread count gave different answers — max u-component 0.080795
+against 0.080751 at 24 threads, the extremum wandering in longitude and hemisphere. Two
+defects, both inherited:
+
+- **The Poisson loop wrote `p_dyn` in place** under `collapse(2) schedule(dynamic, 4)` over
+  (i,j), while the stencil reads `p_dyn[i±1][j±1]` — across the very two indices it writes.
+  `schedule(dynamic)` made it worse than a thread-count dependence: which thread got which
+  chunk varied with timing, so the same binary at the same thread count varied run to run.
+  Now two red-black passes over a checkerboard colouring of (i+j+k), `schedule(static)`.
+- **`UtilsAtm::findResiduumAtm` wrote the shared `m.residuum_old`** from inside every
+  thread's loop. It is read three times — the "declining" vs "too high" message and both
+  reported errors — so a raced value drove the line a human reads to decide whether the run
+  is converging. Now captured once before the parallel region and set once after the
+  reduction, with a lexicographic tie-break so the reported error *location* stops depending
+  on thread arrival order too.
+
+The varying cell sat at 37 905 m, i ≈ 39 of 61 — interior, which is where an in-place
+stencil race puts it and not where a boundary defect would.
+
+**Red-black does not reproduce the old single-thread answer**: it is a different sweep order
+from lexicographic Gauss–Seidel and converges to the same solution by a different path.
+Every number in this file measured before the fix moves in its last digits.
+
+**Not fixed — floating-point reduction order.** OpenMP combines partial sums in a
+thread-count-dependent order and `+` is not associative. Curing it needs ordered reductions,
+as in ATHAD.
+
 ## Remaining work
 
 - **The OLR is not independent of `t_skin`** (item 6). This is the first thing to fix and

@@ -21,10 +21,14 @@ python/pycond.h
 # python/pycond.pyx, cli+python/config_cond.xml) are deliberately TRACKED, as in the
 # parent repo — a param.py change then shows its full effect in the diff.
 
-# Simulation output data
-output_Hadean*/
-python/output_Hadean*/
-cli/output_Hadean*/
+# Simulation output data. The pattern is output_*/ rather than output_Hadean*/
+# because an experiment directory named anything else sits untracked-but-not-ignored
+# and is swept into the next `git add -A` -- which is exactly how 186 MB of VTK once
+# got committed and pushed here. Nothing tracked lives inside an output directory.
+# Same widening as ATHAD's 3575d7a.
+output_*/
+python/output_*/
+cli/output_*/
 atm_log.txt
 atom_log.txt
 
