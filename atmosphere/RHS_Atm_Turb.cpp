@@ -1002,6 +1002,26 @@ void cAtmosphereModel::RHS_Atmosphere_Turb(int i, int j, int k, const CellGeomet
         + buoyancy_ramp * buoyancy * g * dt / u_0 * (t.x[i][j][k] - t_ref_level[i])
         + coriolis * force_nd * coriolis_rad;
 
+    // ---- RADIAL momentum-budget term capture (checkpoint iters only) ----
+    // Mirror of the vbud_*/wbud_* blocks below, for the VERTICAL wind. Ported from ATHAD
+    // 2026-08-18 (its item 42). This is the component that had no instrument: ATHAD's
+    // item 28 spurious 293-rms radial acceleration was invisible because nothing
+    // decomposed rhs_u, and Psi is built from v alone so it cannot see a radial failure.
+    // Note what the split makes checkable at a glance — with the default switches
+    // coriolis_nontraditional() is false, so ubud_cor should be identically zero, and
+    // metric_curvature() is false too; if either is nonzero, a term this fork's CLAUDE.md
+    // assumes inert is live. ubud_buoy isolates ATHAD item 34's remaining extra-*dt
+    // suspect, the half NOT repaired by the surf_drag fix above.
+    if(ubudget_capture){
+        ubud_pgf.x[i][j][k]  = -dpdr_exp;
+        ubud_cor.x[i][j][k]  =  coriolis * force_nd * coriolis_rad;
+        ubud_advv.x[i][j][k] = -(u_exp * dudr_adv);
+        ubud_advh.x[i][j][k] = -(v_invrm * dudthe_adv + w_invrs * dudphi_adv);
+        ubud_diff.x[i][j][k] =  diffusion_u;
+        ubud_buoy.x[i][j][k] =  buoyancy_ramp * buoyancy * g * dt / u_0
+                             * (t.x[i][j][k] - t_ref_level[i]);
+    }
+
     // ----- Near-surface Rayleigh (boundary-layer) drag on the horizontal wind -----
     // See RHS_Atm.cpp for the rationale: the free-slip wall (bcSolidGround) + init-only
     // bcVelSurfSur leave the near-surface tangential wind with NO momentum sink, so the

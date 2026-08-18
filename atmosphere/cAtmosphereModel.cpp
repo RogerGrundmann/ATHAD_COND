@@ -1603,6 +1603,14 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
             zonal_mean_w(wb_prev);   // wbar before RK4
         }
 
+        // ubud_* is read by the ParaView/Results block at the TOP of a checkpoint iteration,
+        // which runs before this RK4 — so capturing only on checkpoint iterations would leave
+        // the written field one whole checkpoint interval stale (ATHAD item 2: identically
+        // zero at the first checkpoint). Capturing on the PRE-checkpoint iteration as well
+        // makes what the vtk carries one iteration old instead. vbudget/wbudget deliberately
+        // keep the checkpoint-only condition: their CSV is written after this RK4, so it is
+        // already current.
+        ubudget_capture = do_vbudget || ((iter_n + 1) % checkpoint == 0);
         vbudget_capture = do_vbudget;     // have rhs_v store its per-term split this RK4 (turbulent path)
         wbudget_capture = do_vbudget;     // have rhs_w store its per-term split this RK4 (turbulent path)
         // Single dynamical core (2026-07-08): the turbulent RHS reduces to LAMINAR when
@@ -1611,6 +1619,7 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
         // solveRungeKutta_Atmosphere / RHS_Atm.cpp path was dropped — inviscid is now an
         // independent switch (diffusion_ramp), decoupled from the turbulence selection.
         solveRungeKutta_Atmosphere_Turb();
+        ubudget_capture = false;
         vbudget_capture = false;
         wbudget_capture = false;
         if(do_vbudget){ vb_diff(vb_dyn); wb_diff(wb_dyn); }   // RK4 net (PGF+Coriolis+advection+diffusion+drag+MC)

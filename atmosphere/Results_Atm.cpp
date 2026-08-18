@@ -39,6 +39,18 @@ void cAtmosphereModel::print_min_max_atm(){
         " deg", radiation, 1.0);
     searchMinMax_3D(" max epsilon ", " min epsilon ", 
         " deg", epsilon, 1.0);
+    searchMinMax_3D(" max ubud_pgf ", " min ubud_pgf ", 
+        " nd ", ubud_pgf, 1.0);
+    searchMinMax_3D(" max ubud_cor ", " min ubud_cor ", 
+        " nd ", ubud_cor, 1.0);
+    searchMinMax_3D(" max ubud_advv ", " min ubud_advv ", 
+        " nd ", ubud_advv, 1.0);
+    searchMinMax_3D(" max ubud_advh ", " min ubud_advh ", 
+        " nd ", ubud_advh, 1.0);
+    searchMinMax_3D(" max ubud_diff ", " min ubud_diff ", 
+        " nd ", ubud_diff, 1.0);
+    searchMinMax_3D(" max ubud_buoy ", " min ubud_buoy ", 
+        " nd ", ubud_buoy, 1.0);
     searchMinMax_2D(" max epsilon_2D ", " min epsilon_2D ", 
          " ppm ", epsilon_2D, 1.0);
     searchMinMax_2D(" max albedo ", " min albedo ", 

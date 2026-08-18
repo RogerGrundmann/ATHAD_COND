@@ -333,6 +333,7 @@ private:
     int total_iter_count = 0;
     double diffusion_ramp = 1.0;
     bool inviscid_phase = false;
+    bool ubudget_capture = false;   // when true, rhs_u stores its per-term split into ubud_* (set on checkpoint iters)
     bool vbudget_capture = false;   // when true, rhs_v stores its per-term split into vbud_* (set on checkpoint iters)
     bool wbudget_capture = false;   // when true, rhs_w stores its per-term split into wbud_* (set on checkpoint iters)
 
@@ -594,6 +595,17 @@ public:
     Array CentrifugalForce;                                             // centrifugal force terms
     Array PresGradForce;                                                // Force caused by normal pressure gradient
     // Zonal-mean v momentum-budget term capture (diagnostic): per-cell rhs_v
+    // RADIAL (vertical wind) momentum-budget term capture — ported from ATHAD 2026-08-18,
+    // its item 42. This is the component that had NO instrument in either fork: ATHAD's
+    // item 28 spurious 293-rms radial acceleration was invisible for exactly this reason,
+    // and Psi is built from v alone so it cannot see a radial failure either. Added here
+    // because attributing the cell decay needs all three components, not two.
+    Array ubud_pgf;                                                     // -∂p/∂r ·exp_rm (radial pressure gradient)
+    Array ubud_cor;                                                     // Coriolis (non-traditional; off by default)
+    Array ubud_advv;                                                    // vertical advection  -u·∂u/∂r
+    Array ubud_advh;                                                    // horizontal advection
+    Array ubud_diff;                                                    // diffusion (molecular + turbulent, + metric)
+    Array ubud_buoy;                                                    // buoyancy body force (ATHAD item 34: carries an extra *dt)
     // contributions, stored when vbudget_capture is set so write_v_momentum_budget
     // can attribute the Hadley/Ferrel spin-down to a specific dynamical term.
     Array vbud_pgf;                                                     // -∂p/∂θ /rm (meridional pressure gradient)

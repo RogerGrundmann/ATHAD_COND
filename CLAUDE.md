@@ -253,6 +253,28 @@ threading defect (ATURAN `ffd0e0e`); report failures and limits in the README (A
   swing from the level count alone. **A grid-refinement study here silently rescales the drag**,
   so `im` and `drag_n_layers` cannot be varied independently until the depth is reformulated as
   a length in metres. Not yet scanned here; ATHAD's four-arm scan is the template.
+- **The radial momentum balance is the pressure gradient and nothing else, and the buoyancy
+  body force is absent** (`ubud_*` ported from ATHAD's item 42, 2026-08-18, measured here at
+  20 iterations). Ψ is built from `v` alone, so it cannot see a radial failure; `vbud_*`/`wbud_*`
+  covered two components of three and this closes the set.
+
+  | term | value | vs `ubud_pgf` |
+  |---|---|---|
+  | `ubud_pgf` | 0.100816 | — |
+  | `ubud_cor` | **0.000000** | exactly zero |
+  | `ubud_advv` | 0.002092 | 2.1 % |
+  | `ubud_advh` | 0.002844 | 2.8 % |
+  | `ubud_diff` | 0.000445 | 0.44 % |
+  | `ubud_buoy` | **0.000000** | < 5e-7, so >2e5 down |
+
+  Same structure as ATHAD's item 42 (pgf 1.15, cor exactly 0, advh 0.0085, buoy 1e-6) at ~10×
+  smaller magnitude. Two of these are self-checks that now pass rather than being asserted:
+  **`ubud_cor` is identically zero**, so `coriolis_nontraditional()` is genuinely off and not
+  merely documented off — the CLAUDE.md warning that "a term written in `RHS_Atm_Turb.cpp` is
+  not necessarily a term the model applies" is now instrumented rather than trusted. And
+  **`ubud_buoy` is effectively zero**, which measures ATHAD item 34's *other* extra-`*dt` term —
+  the half **not** repaired by the `surf_drag` fix in `a609d2b`. The buoyancy body force in a
+  model whose density spans ~3 orders of magnitude is currently not acting.
 - **The OLR is not independent of `t_skin`.** First thing to fix, and the same task as
   invariant 3: the profile is prescribed, so radiation cannot set it.
 - **`geothermal_flux` is over half the energy budget** and is ATHAD's magma-ocean number.
