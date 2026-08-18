@@ -178,6 +178,31 @@ namespace SaturationH2O {
     }
 
     // ------------------------------------------------------------------------
+    // EXACT INVERSE of saturationMassFraction: vapour partial pressure [same units as p]
+    // from a water MASS fraction q and the molar mass of everything that is not water.
+    //
+    // This is the partner the file was missing, and its absence is why
+    // ThermoAtm::waterVapourEvaporation() computed q -> e with the dilute q*p/ep while
+    // computing e -> q exactly two lines earlier. Inverting
+    //     q = x*M_H2O / ( x*M_H2O + (1-x)*M_other )
+    // for the mole fraction x gives
+    //     x = q*M_other / ( M_H2O*(1-q) + q*M_other )
+    // and e = x*p. It reduces to the dilute e = q*p/ep when q << 1 and stays correct when
+    // it does not — at q = 0.3464 (ATHAD_COND's sea surface) the dilute form is low by
+    // 1150 hPa out of 33470, which reads as a saturation deficit at a surface that is
+    // saturated by construction. See README, "What the surface state still breaks".
+    inline double vapourPressureFromMassFraction(double q, double p, double M_other)
+    {
+        if (!(p > 0.0))   return 0.0;
+        if (!(q > 0.0))   return 0.0;
+        if (q >= 1.0)     return p;                          // pure vapour
+        const double den = AtmMixture::M_H2O * (1.0 - q) + q * M_other;
+        if (!(den > 0.0)) return p;
+        const double x = q * M_other / den;                  // mole fraction
+        return x * p;
+    }
+
+    // ------------------------------------------------------------------------
     // Dew-point temperature [K] from a vapour partial pressure e [hPa].
     //
     // Magnus can be inverted in closed form; IAPWS cannot, so this bisects the

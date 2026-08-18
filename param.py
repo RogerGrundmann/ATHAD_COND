@@ -48,11 +48,6 @@ def main():
 
 
 
-
-
-
-
-
             # ATHAD is ONE EPOCH. The paleo-reconstruction inputs that lived here — the
             # topography grids, the NASA surface fields, the Scotese temperature curves, the
             # pygplates reconstruction script, the Ma switches and the hydrosphere SST
@@ -64,10 +59,6 @@ def main():
 #            ('time_end', 'end time', 'int', 10),
             ('time_end', 'end time', 'int', 0),
             ('time_step', 'step size between timeslices', 'int', 10),
-
-
-
-
 
 
 

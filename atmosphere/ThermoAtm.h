@@ -223,10 +223,12 @@ public:
                                            + m.v.x[0][j][k] * m.v.x[0][j][k]
                                            + m.w.x[0][j][k] * m.w.x[0][j][k]) / 3.0) * m.u_0;
                     const double u_kmh_d = vel * 3.6;
+                    // Exact q -> e, the inverse of saturationMassFraction. Written inline
+                    // here first; SaturationH2O::vapourPressureFromMassFraction is that same
+                    // expression, so the two cannot drift apart any more.
                     const double e_air   = (q_sea > 0.0 && q_sea < 1.0)
-                                         ? m.c.x[0][j][k] * p_s * M_nw
-                                           / (m.c.x[0][j][k] * M_nw
-                                              + (1.0 - m.c.x[0][j][k]) * AtmMixture::M_H2O)
+                                         ? SaturationH2O::vapourPressureFromMassFraction(
+                                               m.c.x[0][j][k], p_s, M_nw)
                                          : 0.0;                                     // [hPa], exact
                     const double sd_d    = std::max(0.0, E_s - e_air);              // [hPa]
 
@@ -266,6 +268,27 @@ public:
                 // E_sat/c_eq in the evaporation formula singular → c NaN. See
                 // [[project_upper_velocity_secular_growth]].
                 double t_u_base    = std::max(180.0, m.t.x[0][j][k] * m.t_0);  // [K], floored
+
+                // EVERYTHING FROM HERE DOWN IS THE INHERITED EARTH PATH AND IS UNREACHABLE
+                // IN THIS FORK. The ATHAD_COND branch above ends in `continue` for every
+                // subcritical cell, and the supercritical guard above that catches the rest,
+                // so no cell arrives here. It is kept because the guard is a temperature test
+                // and the 27 bar corner of the stated input range has no liquid ocean at all.
+                //
+                // It is made consistent rather than left as found: it used the scalar config
+                // ep = R_Air/R_v, and R_Air here is the background EXCLUDING CO2 (N2,
+                // 28.014 g/mol). The "other" gas in a saturation formula is everything that is
+                // not water — CO2 and the background, M_nonwater = 42.888 g/mol at this sea
+                // surface. The scalar therefore stands in 0.6431 for a true 0.4201, which is
+                // the 29 % error test/cond_column_selftest.cpp:158-165 describes. That test
+                // asserts against a value it computes itself, so it never covered this code;
+                // what protects the model is the branch above, not the test.
+                //
+                // Converting it is a trap removal, NOT a bug fix: it changes no output, and it
+                // must not be quoted as one. If the guard above is ever loosened, this path
+                // becomes live with the right molar ratio instead of the wrong one.
+                const double M_nw_0 = AtmMixture::M_nonwater(m.c.x[0][j][k],
+                                          m.co2.x[0][j][k], m.m_comp.M_bg);
                 double precip_term = conv_factor * m.Precipitation.x[0][j][k]; // [mm/d]
 
                 double vel_ms = sqrt((m.u.x[0][j][k] * m.u.x[0][j][k]
@@ -290,7 +313,8 @@ public:
                 // Calm conditions (zero wind): skip c update, Dalton = 0.
                 // Meyer and Rohwer retain their still-air (u=0) terms.
                 if (c_Dalton <= 0.0) {
-                    double e  = m.c.x[0][j][k] * p_stat_0jk / m.ep;     // [hPa]  vapour pressure at c_Dalton = 0
+                    double e  = SaturationH2O::vapourPressureFromMassFraction(
+                                    m.c.x[0][j][k], p_stat_0jk, M_nw_0);   // [hPa]  exact, at c_Dalton = 0
                     double sd = std::max(0.0, E_sat - e);               // [hPa]  saturation deficit at c_Dalton = 0
                     m.Evaporation_Dalton.y[j][k] = 0.0;
                     m.Evaporation_Meyer.y[j][k]  = coeff_M * sd;        // [mm/d]
@@ -305,35 +329,44 @@ public:
                     // RK4-unintegrated i=0 layer at a stale near-zero value — which showed as
                     // near-zero water-vapour patches over calm ocean (with normal "spots" at windy
                     // cells) in zonal cross-sections. Concentration only; the flux stays wind-limited.
-                    double denom_calm = p_stat_0jk - (1.0 - m.ep) * E_sat;      // [hPa]
-                    double c_sat_calm = (denom_calm > 0.0) ? m.ep * E_sat / denom_calm
-                                                           : m.ep * E_sat / p_stat_0jk; // [kg/kg]
+                    double c_sat_calm = SaturationH2O::saturationMassFraction(
+                                            E_sat, p_stat_0jk, M_nw_0);     // [kg/kg] exact
                     m.c_fix.y[j][k] = m.c.x[0][j][k];
                     m.c.x[0][j][k]  = m.c_fix.y[j][k] + (c_sat_calm - m.c_fix.y[j][k]) * w_norm;
                     continue;
                 }
 
-                // Saturation specific humidity (exact, not dilute approximation == Verdünnungsnäherung)
-                double denom_guard = p_stat_0jk - (1.0 - m.ep) * E_sat; // [hPa]  guards that static pressure is greater than reduced current saturation pressure
-                double c_sat       = (denom_guard > 0.0)
-                    ? m.ep * E_sat / denom_guard                        // [kg/kg]
-                    : m.ep * E_sat / p_stat_0jk;                        // dilute fallback
+                // Saturation specific humidity — exact mole-to-mass conversion on M_nonwater.
+                // The form that stood here, ep*E/(p-(1-ep)E), is exact only in the molar
+                // ratio it is given; it was given the CO2-free one. Both the ratio and the
+                // conversion are now the model's shared ones.
+                double c_sat = SaturationH2O::saturationMassFraction(
+                                   E_sat, p_stat_0jk, M_nw_0);          // [kg/kg]
 
-                // Active formula solves for c_eq balancing precipitation:
-                //   E_active = coeff_active * (E_sat - c_eq*p/ep) = precip_term
-                //   => c_eq = ep/p * (E_sat - precip_term / coeff_active)
-                // If c_eq < 0, heavy rain saturates air -> clamp to c_sat.
+                // Active formula solves for the c_eq that balances precipitation:
+                //   E_active = coeff_active * (E_sat - e(c_eq)) = precip_term
+                // so the equilibrium VAPOUR PRESSURE is e_eq = E_sat - precip_term/coeff,
+                // and c_eq is that pressure converted to a mass fraction by the same exact
+                // route as c_sat. Solving for c directly (the old ep/p * (...) line) is the
+                // dilute inverse and disagrees with the c_sat two lines above by 29 % here.
+                // If e_eq <= 0, heavy rain saturates the air -> clamp to c_sat.
                 double coeff_active = (active == EvapModel::Meyer)  ?   coeff_M
                                     : (active == EvapModel::Rohwer) ?   coeff_R
                                     :                                   coeff_D;
 
-                double c_eq = m.ep * (E_sat - precip_term / coeff_active) / p_stat_0jk;  // equilibrium humidity (dilute-approx saturation)
-                c_eq = (c_eq < 0.0) ? c_sat : std::min(c_eq, c_sat);
+                double e_eq = (coeff_active != 0.0)
+                            ? E_sat - precip_term / coeff_active        // [hPa]
+                            : E_sat;
+                double c_eq = (e_eq > 0.0)
+                            ? SaturationH2O::saturationMassFraction(e_eq, p_stat_0jk, M_nw_0)
+                            : c_sat;
+                c_eq = std::min(c_eq, c_sat);
 
                 m.c_fix.y[j][k] = m.c.x[0][j][k];
 
                 // Evaporations from current (pre-update) saturation deficit
-                double e_cur  = m.c_fix.y[j][k] * p_stat_0jk / m.ep;    // [hPa]  current vapour pressure
+                double e_cur  = SaturationH2O::vapourPressureFromMassFraction(
+                                    m.c_fix.y[j][k], p_stat_0jk, M_nw_0); // [hPa] exact current vapour pressure
                 double sd_cur = std::max(0.0, E_sat - e_cur);           // [hPa]  current saturation deficit
  
                 m.Evaporation_Dalton.y[j][k] = coeff_D * sd_cur;        // [mm/d]
@@ -355,8 +388,9 @@ public:
                         double E_i     = (t_i >= m.t_0)
                             ? SaturationH2O::saturationPressure(t_i)
                             : SaturationH2O::sublimationPressure(t_i);
-                        double denom_i = p_i - (1.0 - m.ep) * E_i;
-                        double c_sat_i = (denom_i > 0.0) ? m.ep * E_i / denom_i : m.ep * E_i / p_i;
+                        double M_nw_i  = AtmMixture::M_nonwater(m.c.x[i][j][k],
+                                             m.co2.x[i][j][k], m.m_comp.M_bg);
+                        double c_sat_i = SaturationH2O::saturationMassFraction(E_i, p_i, M_nw_i);
                         m.c.x[i][j][k] = std::min(m.c.x[i][j][k] + c_eq * weight, c_sat_i);
                     }
                 }
@@ -670,7 +704,13 @@ public:
                         continue;
                     }
 
-                    const double e          = HPA_TO_PA * q_mixing * p_actual / m.ep;
+                    // Exact inverse, not the dilute q*p/ep: at this fork's water loading the
+                    // two differ by ~3.4 %, and this integral is the precipitable-water
+                    // diagnostic. Same repair as waterVapourEvaporation() above.
+                    const double M_nw_pw     = AtmMixture::M_nonwater(m.c.x[i][j][k],
+                                                   m.co2.x[i][j][k], m.m_comp.M_bg);
+                    const double e          = HPA_TO_PA * SaturationH2O::vapourPressureFromMassFraction(
+                                                  q_mixing, p_actual, M_nw_pw);
                     const double a          = e / (m.R_WaterVapour * t_actual);
                     const double step       = m.get_layer_height(i + 1) - m.get_layer_height(i);
                     const double local_mass = a * step;

@@ -274,91 +274,92 @@ port adds. That is the verification the port's own commit message said it could 
 and it is a fair illustration of what a race costs: not just wrong answers, but the loss of
 the instrument you would use to detect them.
 
-## What the surface state still breaks — audit, 2026-08-18
+## What the surface state still breaks — audit, 2026-08-18 (items 1-3 RETRACTED same day)
 
 The surface moved from ATHAD's **250 bar / 1500 K / supercritical** to **60 bar / 513.15 K /
-subcritical**, and `p_stat.x[0]` and `t.x[0]` feed more functions than the composition table
-suggests. What follows is what that change still leaves wrong, worst first. Already repaired
-and verified in passing: the deep-convection triggers (fractions of `p_stat.x[0]`,
-`MoistConvection.h:450,535,595,640,648,691`), `initCloudIce`'s `H_crit` parabola (anchored to
-`p_0`, `InitValues_Atm.cpp:952-953`), and `latentSensibleHeat`'s sea-surface humidity
-(per-cell `AtmMixture::M_nonwater`, `ThermoAtm.h:212-218`).
+subcritical**. This section first claimed three live defects in
+`ThermoAtm::waterVapourEvaporation()`. **Two of the three were not live and the third could not
+happen. The retraction is kept above the surviving findings because the way it was got wrong is
+the more useful result.**
 
-**1. `ThermoAtm::waterVapourEvaporation()` uses a scalar `ep` that leaves CO₂ out — a 29 %
-error in the quantity the model turns on.** `ep = 0.6431` is `R_Air/R_v = 296.8/461.5`, and
-`R_Air` here is the background *excluding* CO₂, i.e. N₂ at 28.014 g/mol. The "other" gas in a
-saturation formula is everything that is not water — CO₂ **and** the background,
-`M_nonwater = 42.888 g/mol`, giving ε = 0.4201. The two disagree by 53 %, and:
+### RETRACTED: the evaporation routine was already repaired, in the branch that runs
 
-| ε used | q_sat at the sea |
-|---|---|
-| 0.4201 (`M_nonwater`, correct) | **0.3464** — reproduces the config's `c_0` and the self-test exactly |
-| 0.6431 (config `ep`, N₂ only) | 0.4479 — **+29.3 %** |
+The claim was that `waterVapourEvaporation()` used a scalar `ep = 0.6431` that excludes CO₂
+(giving q_sat = 0.4479 against the correct 0.3464, +29.3 %), that it inverted q → e with the
+dilute form while computing e → q exactly, and that the active Meyer formula turned the
+resulting spurious 1151 hPa deficit into ~317 mm/day of evaporation from a saturated surface.
 
-`test/cond_column_selftest.cpp:158-165` **states this error precisely and asserts against it**
-— "passing `M_bg` here (N₂ only, 28.014) makes the sea surface come out at q_sat = 0.448
-instead of 0.346 … a 29 % error in the single quantity this whole model turns on". What was
-never checked is whether the *running code* commits it. It does, at
-`ThermoAtm.h:293,308-310,317-320,330,336,358-359`. Every other saturation call site in the
-model already routes through `SaturationH2O::saturationMassFraction(..., M_nw)`;
-`waterVapourEvaporation` is the last one on the scalar, and it is the **immediate neighbour**
-of `latentSensibleHeat`, which was fixed. *An assertion in a test is not a check on the code
-it describes* — the same shape as CLAUDE.md's "a cross-reference is not a check".
+**The arithmetic is all correct and describes code that never executes.** `ThermoAtm.h:212-257`
+is an ATHAD_COND-specific branch that already does the right thing — per-cell
+`AtmMixture::M_nonwater`, the exact q → e inverse written out inline, and a relaxation of
+`c.x[0]` toward `q_sea` instead of an empirical flux — and it ends in `continue` for every
+subcritical cell. The supercritical guard above it catches the rest. **No cell reaches the
+`ep` code.** Its own comment says so in capitals: *"ATHAD_COND KEEPS THIS GUARD … and adds the
+branch below, which is the one that runs."* The self-test's warning at
+`cond_column_selftest.cpp:158-165` had been acted on; what it protects is that branch.
 
-**2. The same routine inverts q → e with the dilute form while computing e → q exactly, and
-that manufactures evaporation out of a saturated surface.** `c_sat` at line 317 uses the exact
-`ε E/(p − (1−ε)E)` and is commented as exact; `e_cur` at line 336 uses `q·p/ε`, and `c_eq` at
-line 330 uses `ε E/p`. At Earth's dilution they agree. At q = 0.3464 they do not:
+**And the third claim was impossible, not merely inert.** `evap_model` was said to be one flag
+from a Rohwer sign flip. The live branch ends `m.Evaporation.y[j][k] = m.Evaporation_Dalton...`
+— it **hardcodes Dalton and never reads `evap_model` at all**. Measured: the config says
+`Meyer`, and `max Evaporation` = `max Evaporation Dalton` = 62.833923 mm/d exactly, while
+`Evaporation Meyer` = 58.636186. **`evap_model` is a config parameter that does nothing**,
+which is a real finding, and not the one that was claimed.
 
-```
-exact  inverse:  e = 33468 hPa   vs  E_sat(513.15 K) = 33470 hPa  ->  deficit  +1.9 hPa
-dilute inverse:  e = 32319 hPa                                    ->  deficit  +1151 hPa
-```
+**How it was got wrong: liveness was inferred from a grep instead of read from the control
+flow** — the exact failure CLAUDE.md names ("a term written in `RHS_Atm_Turb.cpp` is not
+necessarily a term the model applies"), committed while quoting that lesson. The grep found
+`m.ep` at nine sites in one routine; reading 80 lines further back would have found the
+`continue`. **The generalisation that does survive is narrower and still worth having: an
+assertion in a test is not a check on the code it describes** — `cond_column_selftest.cpp`
+states this error to the digit but asserts against a value it computes itself, so it would not
+have caught the dead path had it been live.
 
-The surface is saturated **by construction** (`c_0 = 0.3464` was derived from `p_sat`), so the
-true deficit is ~0. The active Meyer formula turns the spurious 1151 hPa into
-**≈ 317 mm/day** of evaporation, against ~1.9 mm/day for Earth's ~7 hPa deficit. This is a
-live source term on `c.x[0]`, which is the boundary condition for the whole moist column, and
-`waterVapourEvaporation()` runs every iteration (`cAtmosphereModel.cpp:1525`).
+Rohwer's Earth regression is still worth recording as arithmetic, since it is printed every
+run: `(1.465 − 0.000732·p_mmHg)` is +0.909 at Earth sea level, **−31.478** here and −135.796 in
+ATHAD, and `Evaporation_Rohwer_average` duly prints **−2497.795 mm/d**. It is a diagnostic that
+cannot be selected, not a latent switch.
 
-**3. Rohwer is a sign flip waiting on a config flag.** `evap_model` is `Meyer`, so the Rohwer
-branch only fills a diagnostic — but it is `0.771·(1.465 − 0.000732·p)·(…)` with **p in
-mmHg**, an Earth-sea-level regression:
+### What was actually fixed
 
-```
-Earth sea level   760 mmHg  ->  1.465 - 0.000732p =    +0.909
-here (60 bar)   45004 mmHg  ->                        -31.478
-ATHAD (250 bar)  187516 mmHg ->                       -135.796
-```
+**The precipitable-water diagnostic was on the dilute inverse, and it is live.**
+`ThermoAtm.h:699` computed `e = q·p/ep` inside the column integral. Replaced by the exact
+inverse on per-cell `M_nonwater`. Measured: **135 791 → 153 529 mm, +13.1 %**, and it is the
+*only* number in the whole model output that moves — everything else is bit-identical over a
+full run.
 
-Setting `evap_model = Rohwer` would give evaporation the wrong sign at ~35× magnitude. The
-Meyer coefficient `K_Meyer = 11.0 mm/month/mmHg` is Earth-calibrated too and carries no
-pressure dependence at all, which is its own problem at 60× Earth's pressure — a
-mass-transfer coefficient goes roughly as the vapour diffusivity, and that goes as 1/p.
+`SaturationH2O::vapourPressureFromMassFraction(q, p, M_other)` is new: the exact inverse of
+`saturationMassFraction`, which the file was missing. The live evaporation branch had written
+that expression out inline; it now calls the helper, bit-identically, so the two cannot drift.
+The dead Earth path was converted to the same exact pair — **a trap removal, not a fix, and it
+changes no output.**
 
-**4. `p_stat.x[0]` is still re-anchored to `r_air·R_mix·T_surf`** (`ThermoAtm.h:1456,1491`;
-also `InitValues_Atm.cpp:542`). ATHAD's item 19 replaced this with `p_prev = m.p_0`, on the
-argument that the surface pressure of an atmosphere is the weight of the air above it and the
-surface density is what follows. The design point here is consistent to 0.007 %
-(1e-2·40.8·286.6·513.15 = 60004 hPa against `p_0` = 60000), so porting it would not move the
-initial state — only the drift. **But the port is not automatic**, and this fork is the reason
-why: ATHAD's argument is "if no mass enters or leaves, `p_s` is a constant", and here mass
-*does* leave the column — rain reaches a sea that is a boundary condition, not a reservoir. A
-constant `p_0` would assert a conservation this configuration does not have. Decide what the
-surface pressure should do under net precipitation *before* porting item 19.
+### Still open, and these two are verified live
 
-**5. Dormant, but one config value from live.** `OneCatIceScheme.h:239,242` tests
-`p_stat <= 500.0` hPa absolute; `CategoryIceScheme` is 2, so it never runs. Same repair as the
-deep-convection triggers if it is ever selected.
+**A. `p_stat.x[0]` is re-anchored to `r_air·R_mix·T_surf`** (`ThermoAtm.h:1456,1491`;
+`InitValues_Atm.cpp:542`). **Measured, not read**: the printed `max pressure static` is
+59.919 bar **at 0°N**, so the surface pressure carries the equator-to-pole temperature contrast
+— 58.75 bar at the pole against 59.92 at the equator, a 1.95 % latitudinal variation imposed by
+construction. Under ATHAD's item 19 it would be `p_0` everywhere.
 
-**6. Stale ATHAD numbers in comments, on live code.** `ThermoAtm.h:1452-1455` justifies `R_mix`
-by "using `R_Air` here instead yields 204 bar rather than the intended 250";
+The design point is consistent to 0.007 % (1e-2·40.8·286.6·513.15 = 60004 hPa against
+`p_0` = 60000), so porting item 19 would not move the initial state, only the drift. **But it
+must not be ported blindly.** ATHAD's argument is "if no mass enters or leaves, `p_s` is a
+constant", and here mass *does* leave — rain reaches a sea that is a boundary condition, not a
+reservoir. A constant `p_0` would assert a conservation this configuration does not have.
+Decide what `p_s` should do under net precipitation first.
+
+**B. Stale ATHAD arithmetic in comments on live code.** `ThermoAtm.h:1452-1455` justifies
+`R_mix` by "using `R_Air` here instead yields 204 bar rather than the intended 250";
 `MultiLayerRadiation.h:137,152` explains pressure broadening as "at 250 bar … a factor of 250
-over the 1 bar reference". Both describe ATHAD. The code is right and the arithmetic here is
-60 bar, not 250. `p_ref = 1.0e5` Pa is a genuine broadening reference and is fine.
+over the 1 bar reference". Both describe ATHAD; here it is 60 bar. The code is right.
+`p_ref = 1.0e5` Pa is a genuine broadening reference and is fine.
 
-**Not affected, checked**: `ep` does not reach the radiation (`MultiLayerRadiation`'s `eps`
-is emissivity, a different quantity with a colliding name).
+**C. Dormant.** `OneCatIceScheme.h:239,242` tests `p_stat <= 500.0` hPa absolute;
+`CategoryIceScheme` is 2, so it never runs — verified the same way this time.
+
+**Already repaired, verified in passing**: the deep-convection triggers (fractions of
+`p_stat.x[0]`), `initCloudIce`'s `H_crit` parabola (anchored to `p_0`), and
+`latentSensibleHeat`'s sea-surface humidity (per-cell `M_nonwater`).
 
 ## Remaining work
 
