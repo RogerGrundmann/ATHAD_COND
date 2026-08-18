@@ -60,7 +60,15 @@ are true, at different heights, and the column runs between them.
 | x = (H₂O, CO₂, N₂) | .5578 / .4109 / .0313 | .010 / .920 / .070 |
 | M_mean [g/mol] | 29.01 | 42.63 |
 | R_mix [J/(kg·K)] | 286.6 | 195.0 |
-| cp [J/(kg·K)] | 1349 | 1028 |
+| cp [J/(kg·K)] | 1349 | 1028 † |
+
+† **The 1028 is the dry composition at the SEA-SURFACE temperature**, not at the cold
+trap. `cp_of(dry, 513.15 K)` = 1028.1; at cold-trap conditions it is **856.8** (the
+Shomate fits clamp below 298 K). This table warns two paragraphs above that the stated
+composition and the stated temperature describe different heights — and then does it
+itself, for this one entry. The 1349 is sound: it is `cp_of` at the sea, and it is what
+`cp_l` is set to.
+
 | q_H₂O [kg/kg] | 0.3464 | 0.00423 |
 | ρ [kg/m³] | 40.80 | — |
 | scale height | 15.0 km | 10.2 km |

@@ -53,7 +53,15 @@ fractions are the SEA-SURFACE values, not the quoted dry composition** — see b
 | x(H₂O) / x(CO₂) / x(N₂) | 0.5578 / 0.4109 / 0.0313 | 0.010 / 0.920 / 0.070 |
 | M_mean [g/mol] | 29.01 | 42.63 |
 | R_mix [J/(kg·K)] | 286.6 | 195.0 |
-| cp [J/(kg·K)] | 1349 | 1028 |
+| cp [J/(kg·K)] | 1349 | 1028 † |
+
+† **The 1028 is the dry composition at the SEA-SURFACE temperature**, not at the cold
+trap. `cp_of(dry, 513.15 K)` = 1028.1; at cold-trap conditions it is **856.8** (the
+Shomate fits clamp below 298 K). This table warns two paragraphs above that the stated
+composition and the stated temperature describe different heights — and then does it
+itself, for this one entry. The 1349 is sound: it is `cp_of` at the sea, and it is what
+`cp_l` is set to.
+
 | q_H₂O / q_CO₂ [kg/kg] | 0.3464 / 0.6233 | 0.00423 / 0.9498 |
 
 - **p_surf = 60 bar**, **T_surf = 513.15 K** (prescribed), **ρ_surf = 40.80 kg/m³**
