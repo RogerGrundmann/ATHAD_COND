@@ -624,6 +624,36 @@ public:
     Array wbud_diff;                                                    // diffusion (molecular + turbulent, + metric terms)
     Array wbud_other;                                                   // surface drag + moist-convection momentum
     Array epsilon;                                                      // emissivity/ absorptivity
+    // Ported from ATHAD's item 42 instrumentation, 2026-08-18. All four were absent here:
+    // Psi existed only as a CSV of zonal means and the scalar Psi_max, and tau_above,
+    // tau_layer and N2 were computed nowhere in this model at all.
+    //
+    // tau_above[i] = sum of the layer optical depths above level i, so it is 0 at the lid and
+    // large at the surface. The level where it crosses 1 is the effective radiating level —
+    // the photosphere — which is where the OLR is actually set.
+    // WHY THIS IS A SEPARATE ARRAY AND NOT DERIVED FROM epsilon: epsilon = 1 - exp(-tau)
+    // saturates to exactly 1.0 in double precision for tau > ~37, so tau = -ln(1 - eps) is
+    // unrecoverable below the top few levels. The information is destroyed at write time; it
+    // has to be accumulated where tau is still in scope.
+    Array tau_above;                                                    // cumulative LW optical depth from the lid down
+    // Per-LAYER long-wave optical depth, the quantity tau_above is the running sum of. It is
+    // the model's own measure of how well it resolves its photosphere: dtau >~ 1 anywhere near
+    // the crossing means the two-stream sweep, which is first order in dtau, is integrating
+    // across an unresolved source function. ATHAD item 39 found a SINGLE cell of dtau = 55
+    // spanning the crossing at im = 41, from an offline reconstruction because the model threw
+    // this away. This fork runs im = 61 and has never measured it.
+    Array tau_layer;                                                    // per-layer LW optical depth
+    // Brunt-Vaisala frequency squared, N^2 = (g/theta) d(theta)/dz [1/s^2]. A direct test of
+    // invariant 4: a column genuinely on its own integrated adiabat must have N^2 ~ 0 through
+    // the convective part, so a departure there is an adiabat-integration defect, not weather.
+    // NOTE this fork's invariant 4 is the MOIST adiabat, so N^2 ~ 0 is the sharper claim here.
+    Array N2;                                                           // Brunt-Vaisala frequency squared [1/s2]
+    // Zonal-mean meridional mass streamfunction [kg/s], replicated across k so the existing 3D
+    // writers can emit it. Psi is genuinely 2D and the replication wastes memory, but it buys
+    // the thing that was missing: the cells could not be looked at, only summarised by a
+    // scalar. The streamfunction here was repaired in a85122c (density inside the integral);
+    // that fixed what it measures, and this makes what it measures visible.
+    Array Psi;                                                          // meridional mass streamfunction [kg/s]
     Array radiation;                                                    // radiation
     Array P_rain;                                                       // rain precipitation mass rate
     Array P_snow;                                                       // snow precipitation mass rate

@@ -221,6 +221,15 @@ void cAtmosphereModel::write_meridional_streamfunction(int iter){
         }
     }
 
+    // Publish Psi as a field. It is a zonal mean, so it is replicated across k; the point is
+    // that the cells become visible in ParaView and appear in the Results min/max, instead of
+    // the whole cell-structure argument resting on the scalar Psi_max below. Ported from
+    // ATHAD's item 42, 2026-08-18. See the Psi declaration in cAtmosphereModel.h.
+    for(int i = 0; i < im; i++)
+        for(int j = 0; j < jm; j++)
+            for(int k = 0; k < km; k++)
+                Psi.x[i][j][k] = psi[i][j];
+
     auto lat_of = [&](int j){ return 90.0 - (double)j * 180.0 / (double)(jm - 1); };  // °N positive
 
     // long-format CSV: lat × height

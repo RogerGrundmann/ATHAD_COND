@@ -1562,8 +1562,15 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
             }
 
             if(iter_n % checkpoint == 0){
-                print_min_max_atm();
+                // Psi is FILLED by write_meridional_streamfunction and READ by
+                // print_min_max_atm, so the fill goes first. Ported with ATHAD's item 2:
+                // with the old order the printed Psi extrema were one checkpoint stale and
+                // the Psi FIELD was identically zero at the first checkpoint — which is
+                // exactly what the field port measured here before this swap (max Psi =
+                // min Psi = 0.000000 at iteration 20). The CSV was always correct; only the
+                // printed extrema and the 3D field were behind.
                 write_meridional_streamfunction(iter_n);   // Hadley/Ferrel cell strength (zonal-mean v + Ψ) per vtk checkpoint
+                print_min_max_atm();
                 UtilsAtm(*this).writeFile(bathymetry_name, output_path, false);
                 cout << endl << "      AGCM: write_file in run_3D_loop atm ......................." << endl;
             }

@@ -1699,6 +1699,46 @@ public:
             }
         }
 
+        // Brunt-Vaisala frequency squared, N^2 = (g/theta) d(theta)/dz. Ported from ATHAD's
+        // item 42, 2026-08-18; computed nowhere in this model before.
+        //
+        // Why it exists: the column is asserted to sit on its own integrated adiabat
+        // (invariant 4), and that assertion had no instrument. It is a direct test — a column
+        // genuinely on an adiabat must give N^2 ~ 0 through the convective part, so a
+        // departure there is an integration defect, not weather. THE CLAIM IS SHARPER HERE
+        // THAN IN ATHAD: this fork's invariant 4 is the MOIST adiabat, so N^2 ~ 0 tests
+        // moistLapse and the saturated sweep above, not just the dry g/cp.
+        //
+        // theta uses the LOCAL kappa = R/cp, because both vary with composition and T here.
+        // Centred difference inside, one-sided at the ends.
+        {
+            #pragma omp parallel for collapse(2) schedule(static)
+            for (int j = 0; j < m.jm; j++) {
+                for (int k = 0; k < m.km; k++) {
+                    std::vector<double> theta(m.im, 0.0);
+                    for (int i = 0; i < m.im; i++) {
+                        const double T_i = m.t.x[i][j][k] * m.t_0;
+                        const double p_i = m.p_stat.x[i][j][k];
+                        if (!(T_i > 0.0) || !(p_i > 0.0)) { theta[i] = 0.0; continue; }
+                        const double R_i  = AtmMixture::R_of(m.c.x[i][j][k], m.co2.x[i][j][k],
+                                                             m.m_comp.R_bg);
+                        const double cp_i = AtmMixture::cp_of(m.c.x[i][j][k], m.co2.x[i][j][k],
+                                                              T_i, m.m_comp.M_bg);
+                        const double kap  = (cp_i > 0.0) ? R_i / cp_i : 0.0;
+                        theta[i] = T_i * pow(m.p_0 / p_i, kap);
+                    }
+                    for (int i = 0; i < m.im; i++) {
+                        const int il = (i > 0)        ? i - 1 : i;
+                        const int iu = (i < m.im - 1) ? i + 1 : i;
+                        const double dz = m.get_layer_height(iu) - m.get_layer_height(il);
+                        const double th = theta[i];
+                        m.N2.x[i][j][k] = (dz > 0.0 && th > 0.0)
+                                        ? (m.g / th) * (theta[iu] - theta[il]) / dz : 0.0;
+                    }
+                }
+            }
+        }
+
         auto end     = std::chrono::high_resolution_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
         printf(" time measured: %.3f seconds for PressureDensity\n", elapsed.count() * 1e-9);

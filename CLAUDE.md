@@ -253,6 +253,30 @@ threading defect (ATURAN `ffd0e0e`); report failures and limits in the README (A
   swing from the level count alone. **A grid-refinement study here silently rescales the drag**,
   so `im` and `drag_n_layers` cannot be varied independently until the depth is reformulated as
   a length in metres. Not yet scanned here; ATHAD's four-arm scan is the template.
+- **`Psi`, `tau_above`, `tau_layer` and `N2` are fields now, and `N2` VALIDATES the moist
+  adiabat** (ported from ATHAD's item 42, 2026-08-18). All four were absent: `Psi` existed only
+  as a CSV of zonal means plus the scalar `Psi_max`, and the other three were computed **nowhere
+  in this model**. Measured at 20 iterations:
+
+  | field | value |
+  |---|---|
+  | `tau_above` | 0 at the lid → **2.55e6** at the surface |
+  | `tau_layer` | up to **1.11e5** per layer, at 7.7 km |
+  | `N2` | **4.30e-5** 1/s² at the surface, 4.25e-4 at 114 km |
+  | `Psi` | 4.2212365e13 kg/s, symmetric about the equator |
+
+  **`N2` is the result worth having.** A column on the MOIST adiabat is DRY-stable, so the dry
+  N² must be positive and equal to `(g/T)(Γ_dry − Γ_moist)`. With the self-test's own lapse
+  rates that predicts **4.270e-5**, against a measured **4.30e-5** — agreement to **0.7 %**.
+  So invariant 4 in its moist form is now *measured* rather than asserted, and the saturated
+  sweep in `densities()` is integrating the lapse rate it claims to. Note this differs from
+  ATHAD by design: there N² ≈ 0 through the column because the adiabat is dry.
+  **`Psi` also caught a defect** — it read identically zero until the `write_meridional_
+  streamfunction` / `print_min_max_atm` order was swapped (ATHAD's item 2, which had not been
+  ported with the rest). The CSV was always right; the printed extrema and the field were not.
+  **Not ported deliberately**: the `.vts` panorama carries none of these in either fork.
+  **Still missing here**: `printPlanetaryBalance` has no photosphere block, so the
+  `tau_above` = 1 crossing is stored but never reported — the obvious next port.
 - **The radial momentum balance is the pressure gradient and nothing else, and the buoyancy
   body force is absent** (`ubud_*` ported from ATHAD's item 42, 2026-08-18, measured here at
   20 iterations). Ψ is built from `v` alone, so it cannot see a radial failure; `vbud_*`/`wbud_*`

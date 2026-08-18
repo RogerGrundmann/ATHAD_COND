@@ -205,6 +205,25 @@ public:
                     // carries, which is the correct answer (eps = 1, a perfect blackbody
                     // layer) — but guard it so no NaN can come out of the exponential.
                     m.epsilon.x[i][j][k] = (tau > 700.0) ? 1.0 : (1.0 - exp(-tau));
+
+                    // Stash the LAYER optical depth; converted to the cumulative-from-the-top
+                    // value in the downward pass below. Cannot be recovered from epsilon later
+                    // because epsilon saturates at tau ~ 37 — see cAtmosphereModel.h.
+                    m.tau_above.x[i][j][k] = tau;
+                    m.tau_layer.x[i][j][k] = tau;      // kept: the resolution diagnostic
+                }
+
+                // tau_above: walk DOWNWARD from the lid, accumulating. After this,
+                // tau_above[i] is the optical depth of everything ABOVE level i, so it is 0 at
+                // the lid and monotonically increasing downward. One thread owns this whole
+                // column (the parallel for is over j, k is inner), so this is race-free.
+                {
+                    double acc = 0.0;
+                    for (int i = i_trop; i >= i_mount; i--) {
+                        const double layer = m.tau_above.x[i][j][k];
+                        m.tau_above.x[i][j][k] = acc;
+                        acc += layer;
+                    }
                 }
                 m.epsilon_2D.y[j][k] = m.epsilon.x[i_mount][j][k];
 
