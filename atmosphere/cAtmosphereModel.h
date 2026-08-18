@@ -157,8 +157,18 @@ public:
 
     const int c43 = 4.0/3.0, c13 = 1.0/3.0;
 
-    // ATHAD: 61 radial levels over a ~300 km shell. See param.py (L_atm, zeta) for the
-    // sizing and lib/Array.cpp MAXI for the matching assertion bound.
+    // ATHAD_COND: 61 radial levels over a ~120 km shell (L_atm 6287.5, zeta 3.0 ->
+    // (exp(zeta)-1)*L_atm = 120.0 km). The "~300 km" this comment used to say was ATHAD's
+    // and never applied here. See param.py (L_atm, zeta) for the sizing and lib/Array.cpp
+    // MAXI (= 81) for the matching assertion bound.
+    //
+    // im IS NOT A FREE RESOLUTION KNOB, despite dr = 1/(im-1) being derived
+    // (cAtmosphereModel.cpp:57) so that the inherited dr = 0.025 coupling is already gone.
+    // drag_n_layers is a count of CELLS, so changing im rescales a physical momentum sink:
+    // the shipped 5.0 is 2861 m at im 41, 1786 m at 61 and 1297 m at 81. Change them
+    // together, or reformulate the drag depth as a length first. ATHAD runs im = 41 for
+    // wall clock (0ece6c7), not for physics, and its README item 39 later found the
+    // photosphere reduced to a single grid cell there.
     static const int im = 61, jm = 181, km = 361;
 
     double residuum_old = 1.0e-5;
