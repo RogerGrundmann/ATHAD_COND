@@ -275,8 +275,18 @@ threading defect (ATURAN `ffd0e0e`); report failures and limits in the README (A
   streamfunction` / `print_min_max_atm` order was swapped (ATHAD's item 2, which had not been
   ported with the rest). The CSV was always right; the printed extrema and the field were not.
   **Not ported deliberately**: the `.vts` panorama carries none of these in either fork.
-  **Still missing here**: `printPlanetaryBalance` has no photosphere block, so the
-  `tau_above` = 1 crossing is stored but never reported — the obvious next port.
+  **The photosphere is measured now too** (block ported 2026-08-18, 20 iterations, 24
+  threads): **59.7 km, T there = 278.6 K, and 0.0 % of columns emitting from within 1 K of
+  `t_skin`.** Against ATHAD's 239.4 km / 325.2 K with a skin fraction rising 1.1 → 39.2 %.
+  **That difference matters more than the numbers.** ATHAD's `t_skin` pinning works by the
+  radiating level migrating into the isothermal top, and here it has not: the photosphere sits
+  at half the shell depth, 16 K above `t_skin`, in **zero** columns of the skin. So this fork's
+  "the OLR is not independent of `t_skin`" risk cannot be the *same* mechanism as ATHAD's, and
+  the OLR is correspondingly not sitting on it — 283.81 W/m² against σT_lid⁴ = 270.62 and
+  absorbed = 270.78, a **−13.03 W/m² imbalance that is not identically the distance to a
+  constant**. Whether it closes onto one is now checkable rather than assumable, which is what
+  the instrument was for. Note the lid emissivity is still 0.0000, so the *lid* is transparent
+  while the photosphere is deep — the two are decoupled here, unlike ATHAD at 230 km.
 - **The radial momentum balance is the pressure gradient and nothing else, and the buoyancy
   body force is absent** (`ubud_*` ported from ATHAD's item 42, 2026-08-18, measured here at
   20 iterations). Ψ is built from `v` alone, so it cannot see a radial failure; `vbud_*`/`wbud_*`

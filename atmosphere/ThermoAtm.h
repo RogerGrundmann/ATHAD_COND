@@ -1466,6 +1466,69 @@ public:
             cout << "   <-- the OLR above IS this: the lid is opaque, so the model"
                  << " reports a prescribed temperature, not a computed flux";
         cout << endl;
+
+        // ---- Where the emission actually escapes from: the photosphere ------------------
+        //
+        // The effective radiating level, tau_above = 1, measured from the model's own
+        // cumulative optical depth rather than assumed. Ported from ATHAD's item 42,
+        // 2026-08-18, together with the tau_above field it reads — before that field existed
+        // this fork stored the crossing nowhere and could not report it at all.
+        //
+        // This is the quantity that decides whether the OLR is a column integral or a
+        // restatement of t_skin: once the radiating level migrates INTO the isothermal skin,
+        // OLR = sigma*T_skin^4 = absorbed is arithmetic, not a result (ATHAD README item 25,
+        // and this fork's own "the OLR is not independent of t_skin" open risk). Until this
+        // diagnostic existed the pinning had to be inferred from OLR == absorbed; now it can
+        // be seen directly.
+        //
+        // Reported as a cos(latitude)-weighted mean over columns that bracket the crossing,
+        // with the temperature there and the fraction radiating from within 1 K of t_skin.
+        {
+            double w_sum = 0.0, z_sum = 0.0, t_sum = 0.0;
+            int    n_iso = 0, n_cols = 0;
+            for (int j = 0; j < m.jm; j++) {
+                const double w = fabs(cos(m.the.z[j]));
+                for (int k = 0; k < m.km; k++) {
+                    // Walk down from the lid to the first level with tau_above >= 1.
+                    int i_ph = -1;
+                    for (int i = m.im-1; i >= 0; i--) {
+                        if (m.tau_above.x[i][j][k] >= 1.0) { i_ph = i; break; }
+                    }
+                    if (i_ph < 0 || i_ph >= m.im-1) continue;   // never reaches tau=1 in-domain
+                    // Linear interpolation in tau between i_ph and the level above it.
+                    const double t_lo = m.tau_above.x[i_ph][j][k];
+                    const double t_hi = m.tau_above.x[i_ph+1][j][k];
+                    const double z_lo = m.get_layer_height(i_ph);
+                    const double z_hi = m.get_layer_height(i_ph+1);
+                    const double f    = (t_lo > t_hi) ? (1.0 - t_hi) / (t_lo - t_hi) : 0.0;
+                    const double z_ph = z_hi + f * (z_lo - z_hi);
+                    z_sum += w * z_ph;
+                    t_sum += w * m.t.x[i_ph][j][k] * m.t_0;
+                    w_sum += w;
+                    n_cols++;
+                    // Is the emission coming out of the isothermal skin? If the temperature
+                    // there is within 1 K of t_skin, the OLR is t_skin restated.
+                    if (fabs(m.t.x[i_ph][j][k] * m.t_0 - m.t_skin) < 1.0) n_iso++;
+                }
+            }
+            if (w_sum > 0.0) {
+                const double z_ph_mean = z_sum / w_sum;
+                const double t_ph_mean = t_sum / w_sum;
+                const double frac_iso  = (n_cols > 0) ? (double)n_iso / (double)n_cols : 0.0;
+                cout << "        photosphere (tau_above = 1) ...... = " << setprecision(1)
+                     << z_ph_mean / 1000.0 << " km,  T there = " << setprecision(2)
+                     << t_ph_mean << " K" << endl;
+                cout << "        emission from isothermal skin .... = " << setprecision(1)
+                     << 100.0 * frac_iso << " % of columns";
+                if (frac_iso > 0.5)
+                    cout << "   <-- the OLR is t_skin restated: the radiating level sits in"
+                         << " the isothermal top, so OLR = absorbed is arithmetic";
+                cout << endl;
+            } else {
+                cout << "        photosphere (tau_above = 1) ...... = not reached inside the"
+                     << " domain (column is optically thin throughout)" << endl;
+            }
+        }
         cout << endl;
     }
 
