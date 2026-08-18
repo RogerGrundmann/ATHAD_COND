@@ -224,6 +224,35 @@ threading defect (ATURAN `ffd0e0e`); report failures and limits in the README (A
 
 ## Open risks
 
+- **The dynamics and the radiation do not agree where the levels are — measured here now,
+  not inherited as an estimate** (ported from ATHAD README item 39, 2026-08-18).
+  `exp_rm = 1/(rm+1)` is documented in two places as the Jacobian of the radial coordinate
+  transformation (`TurbulenceAtm.h`; `PressureSolverAtm.h` writes it as
+  `dp/dr_physical = exp_rm * dp/d(rad.z)`). It is the Jacobian of a **quadratic** stretch,
+  `z ~ (rm+1)²/2`, while `init_layer_heights` builds an **exponential** one. `checkRadialMetric()`
+  now prints the spread at every startup, and it is **12.29×** here: the core's radial length
+  unit is 9 837 m at the surface and 120 850 m at the top, while `get_layer_height()` — which
+  the radiation, `ConvectiveAdjustment` and every diagnostic use — has the true heights.
+  CLAUDE.md previously carried "~12×" as an inference from `zeta = 3.0`; that inference was
+  right, and it is now a measurement. The test is unit-free
+  (`ratio(i) = [inv_2dr·exp_rm]/[1/(z[i+1]−z[i−1])]` must be constant in `i`), so it cannot be
+  argued away as a units convention. **`im` is not the lever**: the spread depends only on
+  `zeta` and `im`, and moving `im` 61 → 41 changes it 12.29 → 11.77. `zeta = ln(1.5) = 0.405`
+  would make `exp_rm` correct by construction. `ATM_METRIC_CHECK=1` adds the per-level table.
+  The diagnostic is print-only and self-silencing below a spread of 1.05.
+- **The surface drag is Earth's, twice over, and its depth moves with the grid**
+  (ported from ATHAD README item 44, 2026-08-18). `rayleigh_kf` and `drag_n_layers` were
+  `constexpr` in `RHS_Atm_Turb.cpp` with comments justifying them by Earth's geography — a jet
+  off the west coast of South America for the strength, an Andes orographic feature for the
+  depth. Invariant 1 makes `is_land()` false everywhere here too. **`drag_n_layers = 5` is a
+  count of AIR CELLS, not a length**, so its physical depth is whatever the grid makes it:
+  236 m on `ATOM_Precipitation`'s grid, **1 786 m here**, 7 152 m in ATHAD. Both are config
+  parameters now, bit-identically. **The part ATHAD's writeup did not have to state**: the
+  depth moves with `im` as well as `zeta`, and ATHAD holds `im` fixed at 41 while this fork is
+  at 61 — the same constant means 2 861 m at `im` 41, 1 786 m at 61 and 1 297 m at 81, a 2.2×
+  swing from the level count alone. **A grid-refinement study here silently rescales the drag**,
+  so `im` and `drag_n_layers` cannot be varied independently until the depth is reformulated as
+  a length in metres. Not yet scanned here; ATHAD's four-arm scan is the template.
 - **The OLR is not independent of `t_skin`.** First thing to fix, and the same task as
   invariant 3: the profile is prescribed, so radiation cannot set it.
 - **`geothermal_flux` is over half the energy budget** and is ATHAD's magma-ocean number.

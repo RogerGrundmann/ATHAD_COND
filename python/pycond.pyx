@@ -413,6 +413,24 @@ cdef class Atmosphere:
             self._check_alive()
             self._thisptr.geothermal_flux = <double> value
     
+    property rayleigh_kf:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.rayleigh_kf
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.rayleigh_kf = <double> value
+    
+    property drag_n_layers:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.drag_n_layers
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.drag_n_layers = <double> value
+    
     property eps_residuum:
         def __get__(Atmosphere self):
             self._check_alive()

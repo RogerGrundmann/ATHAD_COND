@@ -241,6 +241,37 @@ def main():
             # solar — it cannot be omitted. ASSUMPTION.
             ('geothermal_flux', 'ATHAD: heat flux from the molten surface into the atmosphere in W/m2', 'double', 150.0),
 
+            # ATHAD_COND: near-surface Rayleigh (boundary-layer) drag, made CONFIGURABLE by
+            # ATHAD's README item 44 and ported here 2026-08-18. Both were constexpr in
+            # RHS_Atm_Turb.cpp with comments justifying them by EARTH'S GEOGRAPHY, which is the
+            # pattern this fork was expected to bring and did:
+            #
+            #   rayleigh_kf   "baseline 1/day gave ~34 m/s eastward w off W-coast S-America;
+            #                  10x cut the surface to ~28 m/s ... so 10x is the settled strength"
+            #   drag_n_layers "that ~27 m/s max at 27S/71W is an Andes orographic feature"
+            #
+            # There is no South America and no Andes here either — invariant 1 makes is_land()
+            # false everywhere. Worse, drag_n_layers is a COUNT OF CELLS, not a length, so its
+            # physical depth is whatever the grid makes it. At this fork's grid:
+            #
+            #   ATOM_Precipitation (L_atm 400 m,    zeta 3.715, im 41)  5 cells =  236 m
+            #   ATHAD_COND         (L_atm 6287.5 m, zeta 3.0,   im 61)  5 cells = 1786 m  -> 7.6x
+            #   ATHAD              (L_atm 15719 m,  zeta 3.0,   im 41)  5 cells = 7152 m  -> 30.3x
+            #
+            # AND IT MOVES WITH im, which ATHAD's writeup did not have to state because it holds
+            # im fixed at 41. This fork is at 61, so the SAME constant means a different depth
+            # here than next door: 2861 m at im 41, 1786 m at 61, 1297 m at 81 — a 2.2x swing
+            # from the level count alone. A grid-refinement study silently rescales the drag.
+            # Same defect shape as init_tropopause_layers' round(h / L_atm): a grid index used
+            # as a physical length.
+            #
+            # DEFAULTS REPRODUCE THE OLD constexpr EXACTLY, so this change alone is
+            # bit-identical. They exist so the drag can be SCANNED. Reformulating the depth as a
+            # LENGTH in metres is the follow-up; it is kept as a cell count here so the default
+            # stays exactly the inherited baseline.
+            ('rayleigh_kf', 'ATHAD_COND: near-surface Rayleigh drag rate in 1/s (was a constexpr 1/86400; ATHAD item 44)', 'double', 1.0/86400.0),
+            ('drag_n_layers', 'ATHAD_COND: boundary-layer drag depth in AIR CELLS, not metres (was a constexpr 5.0; ATHAD item 44 - 5 cells is 1786 m here against 236 m on Earth, and moves with im)', 'double', 5.0),
+
             ('eps_residuum', 'relative error, end of iterations reached, 1% error  allowed', 'double', 1.0e-4),
 
 #            ('turb_model', 'turbulence model: none, k_epsilon, k_omega, k_omega_SST', 'string', 'none'),

@@ -193,6 +193,35 @@ both found here:
   **negative** — the critical humidity stops reducing the cloud threshold and starts
   amplifying it, precisely where the cloud is. Now anchored to `p_0`.
 
+Three more of the shape, ported from ATHAD 2026-08-18 and **measured here rather than
+assumed** — the fork inherited all three silently:
+
+- **`exp_rm` is not the Jacobian of the radial stretch.** It is documented as one in two
+  files that agree with each other and with the variable's name (`TurbulenceAtm.h`;
+  `PressureSolverAtm.h` writes `dp/dr_physical = exp_rm * dp/d(rad.z)`), and it is the
+  Jacobian of a *quadratic* stretch while `init_layer_heights` builds an *exponential* one.
+  `checkRadialMetric()` now prints the spread every startup: **12.29×** here, the core's
+  radial length unit running 9 837 m at the surface to 120 850 m at the top. So the dynamics
+  and the radiation do not agree where the levels are. CLAUDE.md carried "~12×" as an
+  inference from `zeta = 3.0`; the inference was right and is now a measurement. The test is
+  unit-free, so it is not a units convention. **`im` is not the lever** — the spread is a
+  function of `zeta` and `im` only, and 61 → 41 moves it to 11.77×. This is the pattern's
+  worst form yet: not an Earth literal but a *wrong formula with a confident comment beside
+  it*, which is why the check is print-only and permanent rather than a one-off measurement.
+- **The surface drag is Earth's twice over.** `rayleigh_kf` was tuned against a jet off the
+  west coast of South America and `drag_n_layers` defended by an Andes orographic feature;
+  invariant 1 makes `is_land()` false everywhere here. Both are config parameters now,
+  bit-identically (verified: a 5-iteration run against the pre-change binary differs in
+  timestamps, wall clock and the new metric-check lines, and in no number).
+- **And `drag_n_layers` is a cell COUNT, so the drag depth is set by the grid.** 5 cells is
+  236 m on `ATOM_Precipitation`'s grid and **1 786 m here**. ATHAD reported this against its
+  own 7 152 m; what its writeup did not have to say is that the depth moves with **`im`** as
+  well as `zeta`, because ATHAD holds `im` at 41 and this fork is at 61. The same constant
+  means 2 861 m at `im` 41, 1 786 m at 61, 1 297 m at 81 — **a 2.2× swing in a physical
+  momentum sink from the level count alone.** A grid-refinement study here silently rescales
+  the drag, so `im` and `drag_n_layers` cannot be varied independently until the depth is
+  reformulated as a length in metres.
+
 And one of the same shape in a field rather than a constant: ATHAD holds the CO₂ **mass**
 fraction uniform, which is right there because its water is uniform too. Here water runs
 0.346 → 0.004, so a uniform mass fraction makes the background absorb all the mass the
@@ -260,6 +289,20 @@ the instrument you would use to detect them.
 - **The initial water profile is built on the provisional temperature** that
   `initTemperatureData` leaves, because that routine still runs before the composition
   exists. `densities(true)` repairs it, but it should be built on the real mixture.
+- **The drag has not been scanned here.** It is now scannable (`rayleigh_kf`,
+  `drag_n_layers`), and ATHAD's four-arm 200-iteration template — baseline, drag ×0.1, ×10,
+  and depth 1 cell — ports directly. Do it *after* deciding the `im` question below, since
+  the arms are only comparable at fixed `im`.
+- **`im` = 61 here against ATHAD's 41, and the two are not freely interchangeable.** `dr` is
+  derived (`cAtmosphereModel.cpp:57`, `1/(im-1)`), so the classic `dr = 0.025` coupling is
+  already repaired and `im` can be changed by editing one line. But it is not a neutral
+  resolution knob: it rescales the drag depth 1.6× (above), it does **not** fix the metric
+  (12.29 → 11.77×), and ATHAD's own 41 was chosen for wall clock (`0ece6c7`: 1.44× faster,
+  0.68× the memory) while explicitly costing accuracy at the top — after which its item 39
+  found the photosphere reduced to a single grid cell of `dτ = 55` there. Two `im = 41`
+  remnants are still in the tree and are cosmetic only: `Paraview_Atm.cpp:855`'s
+  `dz = 0.025` (a VTK plot spacing, already wrong at 61) and `Array_1D.cpp:80`'s
+  `if(mm == 41)` (suppresses one print).
 - **Not yet run beyond 20 iterations.** No stability run, no grid-convergence check at
   100/120/140 km, no thread-determinism check. ATHAD's experience says 400 iterations is a
   stability check and not a convergence check — its meridional wind was still in free

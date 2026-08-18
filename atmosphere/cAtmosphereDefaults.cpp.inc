@@ -41,6 +41,8 @@ void cAtmosphereModel::SetDefaultConfig() {
   kappa_CO2 = 0.001;
   kappa_bg = 1e-06;
   geothermal_flux = 150.0;
+  rayleigh_kf = 1.1574074074074073e-05;
+  drag_n_layers = 5.0;
   eps_residuum = 0.0001;
   turb_model = "k_omega_SST";
   inviscid_spinup_iters = 0;

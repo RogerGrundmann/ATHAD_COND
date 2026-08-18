@@ -54,3 +54,6 @@ Reaction_Papers/
 
 # Claude Code session data
 .claude/
+
+# per-run working directories for A/B checks (see README)
+python/run_*/

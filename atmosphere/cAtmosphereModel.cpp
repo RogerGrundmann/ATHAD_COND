@@ -439,6 +439,107 @@ void cAtmosphereModel::checkMetricConsistency() const {
         std::exit(1);
     }
 }
+// Is exp_rm the Jacobian of the radial stretch? It is documented as one at TurbulenceAtm.h
+// ("exp_rm = 1/(rm+1) is the Jacobian of the radial coordinate transformation") and it is not.
+// ATHAD README item 39 has the measurement; this is the check that keeps it visible. Ported
+// 2026-08-18 -- it was live here, unmeasured, at the same zeta = 3.0.
+//
+// THE TEST IS UNIT-FREE, which is what makes it conclusive. Every radial derivative in the core
+// is (index difference) * inv_2dr * exp_rm. For that to be d/dz_physical under ONE constant
+// length normalisation — whatever that normalisation happens to be — the quantity
+//
+//     ratio(i) = [inv_2dr * exp_rm(i)] / [1 / (z[i+1] - z[i-1])]
+//
+// must be CONSTANT in i. Its spread is therefore not a units question and cannot be argued away
+// by picking a different L_unit: any variation is a wrong metric SHAPE.
+//
+// exp_rm = 1/(rm+1) implies dz/d(rm) = rm+1, i.e. a QUADRATIC stretch z ~ (rm+1)^2/2, while
+// init_layer_heights builds an EXPONENTIAL one, z = (exp(zeta*(rm-rad.z[0])) - 1)*L_atm. Over
+// rad.z in [1,2] the quadratic form spans 1.5x and the exponential spans exp(zeta), so the two
+// agree only near zeta = ln(1.5) = 0.405. At the shipped zeta = 3.0 the spread is 11.8x.
+//
+// It is NOT a function of im: 11.8x at im = 41 and 12.3x at im = 61, so refining the grid does
+// not help and marginally hurts. zeta is the only lever short of replacing exp_rm outright,
+// which touches ~91 sites across 10 files including the Poisson operator.
+void cAtmosphereModel::checkRadialMetric() const {
+    if(m_layer_heights.size() < (std::size_t)im) return;      // called before init_layer_heights
+
+    static const bool verbose = [](){
+        const char* e = getenv("ATM_METRIC_CHECK"); return e && atoi(e) != 0; }();
+
+    // setprecision/fixed are sticky on the stream, so save and restore rather than leaving
+    // every later diagnostic in whatever format this one wanted.
+    const std::ios::fmtflags saved_flags = cout.flags();
+    const std::streamsize    saved_prec  = cout.precision();
+
+    const double inv_2dr = 1.0 / (2.0 * dr);
+    double ratio_min = 0.0, ratio_max = 0.0;
+    bool first = true;
+
+    if(verbose){
+        cout << endl
+             << "      AGCM: radial metric check - is exp_rm the Jacobian of the stretch?" << endl
+             << "         i    rad.z    exp_rm     z[km]  dz_true[km]    J_true[m]  J_code[-]"
+             << "     ratio[m]" << endl;
+    }
+
+    for(int i = 1; i < im-1; i++){
+        const double rm     = rad.z[i];
+        const double exp_rm = 1.0 / (rm + 1.0);
+        const double dz2    = m_layer_heights[i+1] - m_layer_heights[i-1];       // [m]
+        if(!(dz2 > 0.0)) continue;
+
+        // ratio has units of metres: the length unit the core is implicitly working in at
+        // this level. Constant iff exp_rm is the true Jacobian up to that one unit.
+        const double ratio = (inv_2dr * exp_rm) * dz2;
+
+        if(first){ ratio_min = ratio_max = ratio; first = false; }
+        else { ratio_min = std::min(ratio_min, ratio); ratio_max = std::max(ratio_max, ratio); }
+
+        if(verbose && (i % 4 == 1 || i == im-2)){
+            const double J_true = zeta * L_atm * exp(zeta * (rm - rad.z[0]));    // dz/d(rad.z) [m]
+            cout << "      " << setw(4) << i
+                 << setw(9)  << setprecision(4) << fixed << rm
+                 << setw(10) << setprecision(5) << exp_rm
+                 << setw(10) << setprecision(1) << m_layer_heights[i] / 1000.0
+                 << setw(13) << setprecision(3) << (m_layer_heights[i+1] - m_layer_heights[i]) / 1000.0
+                 << setw(13) << setprecision(0) << J_true
+                 << setw(11) << setprecision(3) << (1.0 / exp_rm)
+                 << setw(13) << setprecision(1) << ratio << endl;
+        }
+    }
+
+    if(first){ cout.flags(saved_flags); cout.precision(saved_prec); return; }
+    const double spread = (ratio_min > 0.0) ? ratio_max / ratio_min : 0.0;
+
+    // ln(1.5) is where the quadratic and exponential stretches span the same range over
+    // rad.z in [1,2] — the zeta at which exp_rm would be right by construction.
+    const double zeta_consistent = log(1.5);
+
+    cout << "      AGCM: radial metric check - core length unit runs "
+         << setprecision(0) << ratio_min << " m at the surface to "
+         << ratio_max << " m at the top, spread " << setprecision(2) << spread
+         << "x (1.00 = exp_rm is the Jacobian)." << endl;
+
+    if(spread > 1.05){
+        cout << "            NOT the Jacobian: exp_rm = 1/(rm+1) is a QUADRATIC stretch, the grid"
+             << " is EXPONENTIAL (zeta = " << setprecision(3) << zeta << ")." << endl
+             << "            Every radial derivative is mis-scaled by a factor varying "
+             << setprecision(2) << spread << "x across the column, low at the surface."
+             << endl
+             << "            No length normalisation can absorb it. zeta = "
+             << setprecision(3) << zeta_consistent
+             << " would make exp_rm correct by construction; im does not move it." << endl
+             << "            See ATHAD README item 39." << (verbose ? "" :
+                " ATM_METRIC_CHECK=1 for the per-level table.") << endl;
+    }
+
+    cout.flags(saved_flags);
+    cout.precision(saved_prec);
+}
+/*
+*
+*/
 /*
 *
 */
@@ -500,6 +601,9 @@ void cAtmosphereModel::RunTimeSlice(int Ma){
         #pragma omp section
         { init_tropopause_layers(); }
     }
+
+    // AFTER init_layer_heights: it compares exp_rm against the heights that call builds.
+    checkRadialMetric();
 
     read_Atmosphere_Surface_Data(Ma);                                   // reading topography data and NASA measurements
 

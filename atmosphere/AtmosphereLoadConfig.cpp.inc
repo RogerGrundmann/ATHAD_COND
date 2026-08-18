@@ -42,6 +42,8 @@
     Config::FillDoubleWithElement(elem_common, "kappa_CO2", kappa_CO2);
     Config::FillDoubleWithElement(elem_common, "kappa_bg", kappa_bg);
     Config::FillDoubleWithElement(elem_common, "geothermal_flux", geothermal_flux);
+    Config::FillDoubleWithElement(elem_common, "rayleigh_kf", rayleigh_kf);
+    Config::FillDoubleWithElement(elem_common, "drag_n_layers", drag_n_layers);
     Config::FillDoubleWithElement(elem_common, "eps_residuum", eps_residuum);
     Config::FillStringWithElement(elem_common, "turb_model", turb_model);
     Config::FillIntWithElement(elem_common, "inviscid_spinup_iters", inviscid_spinup_iters);

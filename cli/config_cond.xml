@@ -35,6 +35,8 @@
         <kappa_CO2>0.001</kappa_CO2>  <!-- ATHAD: grey longwave mass absorption of CO2 in m2/kg(double) -->
         <kappa_bg>1e-06</kappa_bg>  <!-- ATHAD: grey longwave mass absorption of the background gases in m2/kg(double) -->
         <geothermal_flux>150.0</geothermal_flux>  <!-- ATHAD: heat flux from the molten surface into the atmosphere in W/m2(double) -->
+        <rayleigh_kf>1.1574074074074073e-05</rayleigh_kf>  <!-- ATHAD_COND: near-surface Rayleigh drag rate in 1/s (was a constexpr 1/86400; ATHAD item 44)(double) -->
+        <drag_n_layers>5.0</drag_n_layers>  <!-- ATHAD_COND: boundary-layer drag depth in AIR CELLS, not metres (was a constexpr 5.0; ATHAD item 44 - 5 cells is 1786 m here against 236 m on Earth, and moves with im)(double) -->
         <eps_residuum>0.0001</eps_residuum>  <!-- relative error, end of iterations reached, 1% error  allowed(double) -->
         <turb_model>k_omega_SST</turb_model>  <!-- turbulence model: none, k_epsilon, k_omega, k_omega_SST(string) -->
         <inviscid_spinup_iters>0</inviscid_spinup_iters>  <!-- cumulative iterations to run inviscid (Euler + free-slip mountains) before viscous physics activates; 0 disables(int) -->

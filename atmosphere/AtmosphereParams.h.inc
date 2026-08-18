@@ -40,6 +40,8 @@ double kappa_H2O;
 double kappa_CO2;
 double kappa_bg;
 double geothermal_flux;
+double rayleigh_kf;
+double drag_n_layers;
 double eps_residuum;
 string turb_model;
 int inviscid_spinup_iters;
