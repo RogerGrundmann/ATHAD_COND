@@ -274,6 +274,92 @@ port adds. That is the verification the port's own commit message said it could 
 and it is a fair illustration of what a race costs: not just wrong answers, but the loss of
 the instrument you would use to detect them.
 
+## What the surface state still breaks — audit, 2026-08-18
+
+The surface moved from ATHAD's **250 bar / 1500 K / supercritical** to **60 bar / 513.15 K /
+subcritical**, and `p_stat.x[0]` and `t.x[0]` feed more functions than the composition table
+suggests. What follows is what that change still leaves wrong, worst first. Already repaired
+and verified in passing: the deep-convection triggers (fractions of `p_stat.x[0]`,
+`MoistConvection.h:450,535,595,640,648,691`), `initCloudIce`'s `H_crit` parabola (anchored to
+`p_0`, `InitValues_Atm.cpp:952-953`), and `latentSensibleHeat`'s sea-surface humidity
+(per-cell `AtmMixture::M_nonwater`, `ThermoAtm.h:212-218`).
+
+**1. `ThermoAtm::waterVapourEvaporation()` uses a scalar `ep` that leaves CO₂ out — a 29 %
+error in the quantity the model turns on.** `ep = 0.6431` is `R_Air/R_v = 296.8/461.5`, and
+`R_Air` here is the background *excluding* CO₂, i.e. N₂ at 28.014 g/mol. The "other" gas in a
+saturation formula is everything that is not water — CO₂ **and** the background,
+`M_nonwater = 42.888 g/mol`, giving ε = 0.4201. The two disagree by 53 %, and:
+
+| ε used | q_sat at the sea |
+|---|---|
+| 0.4201 (`M_nonwater`, correct) | **0.3464** — reproduces the config's `c_0` and the self-test exactly |
+| 0.6431 (config `ep`, N₂ only) | 0.4479 — **+29.3 %** |
+
+`test/cond_column_selftest.cpp:158-165` **states this error precisely and asserts against it**
+— "passing `M_bg` here (N₂ only, 28.014) makes the sea surface come out at q_sat = 0.448
+instead of 0.346 … a 29 % error in the single quantity this whole model turns on". What was
+never checked is whether the *running code* commits it. It does, at
+`ThermoAtm.h:293,308-310,317-320,330,336,358-359`. Every other saturation call site in the
+model already routes through `SaturationH2O::saturationMassFraction(..., M_nw)`;
+`waterVapourEvaporation` is the last one on the scalar, and it is the **immediate neighbour**
+of `latentSensibleHeat`, which was fixed. *An assertion in a test is not a check on the code
+it describes* — the same shape as CLAUDE.md's "a cross-reference is not a check".
+
+**2. The same routine inverts q → e with the dilute form while computing e → q exactly, and
+that manufactures evaporation out of a saturated surface.** `c_sat` at line 317 uses the exact
+`ε E/(p − (1−ε)E)` and is commented as exact; `e_cur` at line 336 uses `q·p/ε`, and `c_eq` at
+line 330 uses `ε E/p`. At Earth's dilution they agree. At q = 0.3464 they do not:
+
+```
+exact  inverse:  e = 33468 hPa   vs  E_sat(513.15 K) = 33470 hPa  ->  deficit  +1.9 hPa
+dilute inverse:  e = 32319 hPa                                    ->  deficit  +1151 hPa
+```
+
+The surface is saturated **by construction** (`c_0 = 0.3464` was derived from `p_sat`), so the
+true deficit is ~0. The active Meyer formula turns the spurious 1151 hPa into
+**≈ 317 mm/day** of evaporation, against ~1.9 mm/day for Earth's ~7 hPa deficit. This is a
+live source term on `c.x[0]`, which is the boundary condition for the whole moist column, and
+`waterVapourEvaporation()` runs every iteration (`cAtmosphereModel.cpp:1525`).
+
+**3. Rohwer is a sign flip waiting on a config flag.** `evap_model` is `Meyer`, so the Rohwer
+branch only fills a diagnostic — but it is `0.771·(1.465 − 0.000732·p)·(…)` with **p in
+mmHg**, an Earth-sea-level regression:
+
+```
+Earth sea level   760 mmHg  ->  1.465 - 0.000732p =    +0.909
+here (60 bar)   45004 mmHg  ->                        -31.478
+ATHAD (250 bar)  187516 mmHg ->                       -135.796
+```
+
+Setting `evap_model = Rohwer` would give evaporation the wrong sign at ~35× magnitude. The
+Meyer coefficient `K_Meyer = 11.0 mm/month/mmHg` is Earth-calibrated too and carries no
+pressure dependence at all, which is its own problem at 60× Earth's pressure — a
+mass-transfer coefficient goes roughly as the vapour diffusivity, and that goes as 1/p.
+
+**4. `p_stat.x[0]` is still re-anchored to `r_air·R_mix·T_surf`** (`ThermoAtm.h:1456,1491`;
+also `InitValues_Atm.cpp:542`). ATHAD's item 19 replaced this with `p_prev = m.p_0`, on the
+argument that the surface pressure of an atmosphere is the weight of the air above it and the
+surface density is what follows. The design point here is consistent to 0.007 %
+(1e-2·40.8·286.6·513.15 = 60004 hPa against `p_0` = 60000), so porting it would not move the
+initial state — only the drift. **But the port is not automatic**, and this fork is the reason
+why: ATHAD's argument is "if no mass enters or leaves, `p_s` is a constant", and here mass
+*does* leave the column — rain reaches a sea that is a boundary condition, not a reservoir. A
+constant `p_0` would assert a conservation this configuration does not have. Decide what the
+surface pressure should do under net precipitation *before* porting item 19.
+
+**5. Dormant, but one config value from live.** `OneCatIceScheme.h:239,242` tests
+`p_stat <= 500.0` hPa absolute; `CategoryIceScheme` is 2, so it never runs. Same repair as the
+deep-convection triggers if it is ever selected.
+
+**6. Stale ATHAD numbers in comments, on live code.** `ThermoAtm.h:1452-1455` justifies `R_mix`
+by "using `R_Air` here instead yields 204 bar rather than the intended 250";
+`MultiLayerRadiation.h:137,152` explains pressure broadening as "at 250 bar … a factor of 250
+over the 1 bar reference". Both describe ATHAD. The code is right and the arithmetic here is
+60 bar, not 250. `p_ref = 1.0e5` Pa is a genuine broadening reference and is fine.
+
+**Not affected, checked**: `ep` does not reach the radiation (`MultiLayerRadiation`'s `eps`
+is emissivity, a different quantity with a colliding name).
+
 ## Remaining work
 
 - **The OLR is not independent of `t_skin`** (item 6). This is the first thing to fix and
