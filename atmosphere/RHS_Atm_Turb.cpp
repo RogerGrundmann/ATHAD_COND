@@ -1009,16 +1009,49 @@ void cAtmosphereModel::RHS_Atmosphere_Turb(int i, int j, int k, const CellGeomet
     // coasts (Antarctic Peninsula / Baffin / Norway / Sea of Okhotsk). Held-Suarez-style
     // linear drag on v,w only (NOT radial u), full strength at the first air cell above
     // the LOCAL surface (i_topography[j][k]) and ramping to zero over the boundary layer.
-    // Scaled in advective time (k_f*L_atm/u_0*dt) to match the laminar RHS_Atm.cpp and the
-    // rest of this path's forcing — see the force_nd note above (2026-06-19 fix).
     // rayleigh_kf and drag_n_layers are CONFIG PARAMETERS now (ATHAD README item 44, ported
     // 2026-08-18). The Earth calibration comments that used to live here are in param.py,
     // where the values are — including the reason a CELL COUNT is not a depth: 5 cells is
     // 236 m on ATOM_Precipitation's grid and 1786 m on this one, and it moves with im.
+    //
+    // DRAG-dt FIX (2026-08-18, ported from ATHAD). Removed the extra *dt, exactly as the
+    // Held-Suarez block ~30 lines above did on 2026-07-04 and for the identical reason —
+    // the two had been inconsistent with each other in this file ever since. The
+    // advective-time non-dimensionalisation of a linear (Rayleigh) damping rate is
+    // k_f*L_atm/u_0, already dimensionless; RK4 then integrates it with its OWN *dt
+    // (RungeKutta_Atm_Turb.cpp:169,201,228,255) like every other term in rhs_v/rhs_w. The
+    // extra *dt made the drag enter as dt^2.
+    //
+    // IT IS WORSE HERE THAN IN ATHAD, because the error is quadratic in dt and this fork
+    // runs dt_visc = 4e-5 against ATHAD's 1e-4. With L_atm = 6287.5, u_0 = 8:
+    //     surf_drag                  = 3.6386e-07   (already carried *dt)
+    //     RK4's own *dt -> per step   = 1.4554e-11
+    //     over a 200-iteration run    = 2.9e-09     <- BELOW the ~1e-8 reproducibility floor
+    // ATHAD's equivalent is 4.5e-08, so the shipped drag here was a further 15.6x weaker.
+    // In ATHAD a four-arm scan spanning 100x in rayleigh_kf returned Psi_max agreeing to 8
+    // significant figures at every checkpoint: that scan measured the noise floor, not the
+    // drag. Any such scan here would have been even more purely noise.
+    //
+    // A SIDE EFFECT WORTH NAMING: under the dt^2 form the effective drag scaled as dt^2, so
+    // ATHAD and ATHAD_COND differed in actual drag strength by (1e-4/4e-5)^2 = 6.25x purely
+    // from a timestep neither chose as a physics setting. After this fix the coefficient is
+    // independent of dt, as a physical rate should be, and the two forks differ only through
+    // L_atm as intended.
+    //
+    // This is a correctness fix, not a regime change: the fixed baseline damps v by
+    // 3.6e-07 per step, ~7.3e-05 over 200 iterations. A 1/day drag cannot do more, because
+    // 200 iterations is roughly 6 s (on L_atm) to 2 min (on the 120 km shell) of physical
+    // time — see ATHAD README item 47 on the ambiguous time unit. It is also strictly safer
+    // than the same repair on the buoyancy term that ATHAD item 34 pairs it with: drag is a
+    // DAMPING term, so a larger coefficient is stabilising, and item 34's "336x drove a
+    // polar vertical runaway" caveat is about buoyancy, a body force.
+    //
+    // THIS CHANGES RESULTS. Every Psi, KE and wind number recorded here predates it.
+
     double drag_profile = 1.0 - (double)(i - i_topography[j][k]) / drag_n_layers;   // both from config
     if(drag_profile < 0.0) drag_profile = 0.0;
     if(drag_profile > 1.0) drag_profile = 1.0;
-    double surf_drag = (rayleigh_kf * L_atm / u_0 * dt) * drag_profile;
+    double surf_drag = (rayleigh_kf * L_atm / u_0) * drag_profile;
 
     rhs_v.x[i][j][k] = -dpdthe_invrm - transport_v + diffusion_v
         + coriolis * force_nd * coriolis_the
