@@ -53,19 +53,31 @@ suspended condensate (cloud + ice + graupel) so the fractions sum to `1 - q_cond
 without graupel, floored at 0.5 — is deleted in the same edit so it is not counted twice.
 In a condensing atmosphere with a sea this is not the second-order effect it is in ATHAD:
 
-| iteration 10-20 | before | after |
+40 iterations, 24 threads, same config, one binary generation apart:
+
+| iter | OLR before | OLR after | imbalance before | imbalance after |
+|---|---|---|---|---|
+| 10 | 281.77 | **272.95** (-3.1 %) | -10.99 | **-2.17** |
+| 20 | 283.81 | **275.29** (-3.0 %) | -13.03 | **-4.51** |
+| 30 | 283.82 | 275.39 (-3.0 %) | -13.04 | -4.61 |
+| 40 | 283.72 | **275.36** (-2.9 %) | -12.94 | **-4.58** |
+
+| | before | after |
 |---|---|---|
-| OLR | 281.77 W/m2 | **272.95** (-3.1 %) |
-| imbalance (in - out) | -10.99 W/m2 | **-2.17** (-80 %) |
-| `Psi_max` @ 20 | 42218.93 | 40959.17 (-3.0 %) |
+| `Psi_max` @ 20 / @ 40 | 42218.93 / 42186.38 | 40959.17 / 40927.25 (-3.0 %) |
 | co2 column average | 438312.257 | 438259.583 (-0.012 %) |
+| max cloud water | 47.084 / 47.002 g/kg | 46.912 / 46.860 |
 | max water vapour | 339.932 g/kg | 339.943 |
 | mean albedo | 0.5000 | 0.5000 |
 
-ATHAD's equivalent OLR shift was -0.11 %. **The 28x difference is the condensate**: ATHAD's is
-12-47 g/kg confined to a thin band, this fork condenses throughout. Early-iteration numbers, not
-converged, and the imbalance falling to -2.17 W/m2 is NOT a claim that the budget now closes —
-it is one arm of a comparison at iteration 10.
+**The OLR shift is stable at -3.0 % across all four diagnostics**, so it is a property of the
+change and not of the first iteration. ATHAD's equivalent was -0.11 %. **The 28x difference is
+the condensate**: ATHAD's is 12-47 g/kg confined to a thin band, this fork condenses throughout.
+
+**The imbalance is NOT a claim that the budget now closes.** It improves from -12.94 to
+-4.58 W/m2 at iteration 40, but both arms are 40-iteration transients, and this file's own
+history (ATHAD items 25, 43, 46) is a series of imbalances that looked like convergence and were
+not. What is measured is a difference between two arms, not an equilibrium.
 
 **A DESIGN FLAW THE COND SELF-TEST CAUGHT ON THE FIRST RUN.** `carrierRef()` was set inside
 `AtmMixture::resolve()` — the one function that knows the configured composition, so it looked
