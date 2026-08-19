@@ -558,7 +558,7 @@ public:
         // cubic extrapolation: x[a] = x[a+3d] - 3*x[a+2d] + 3*x[a+d]
         // von Neumann:         x[a] = c43*x[a+d] - c13*x[a+2d]
 
-        // Pattern A: cubic at both i=0 and i=im-1
+        // Pattern A: ZERO-GRADIENT COPY at both i=0 and i=im-1 (was cubic at both).
         // MC_t/MC_q/MC_v/MC_w are deliberately NOT extrapolated — MoistConvection
         // rhsForcing already writes them (capped) at i=0..im-2, and the 3-point linear
         // extrap x[0]=x[3]-3x[2]+3x[1] overshoots 7× when the capped values oscillate
@@ -636,11 +636,32 @@ public:
                 // No extrapolation is needed in its place: MultiLayerRadiation writes
                 // every level of radiation.x, including the lid, every call.
 
-                // Pattern A
+                // Pattern A — cubic at i=0, ZERO-GRADIENT COPY at the lid (2026-08-19,
+                // ported from ATHAD).
+                //
+                // The lid used to be the same cubic. It is the third time this stencil has had
+                // to come off a boundary in this file: v/w "overshoot THROUGH zero", the
+                // turbulence scalars "amplify the concavity", p_stat reached -36 hPa in ATHAD
+                // (Pattern D below). It was putting NEGATIVE values into fields that cannot be
+                // negative — measured here: s_u = -5.01 at the SURFACE, i.e. a parcel at
+                // -1020 K. Not one of these fields wants curvature projected past a boundary:
+                // convection scalars, microphysical rates, mass fluxes, diagnostic forces. A
+                // zero-gradient copy is non-amplifying and cannot manufacture a sign. The lid
+                // values are read — rhsForcing's flux divergence at i = im-2 uses
+                // M_u/M_d/s/s_u/s_d/q_v_u at i = im-1 — so this is not only cosmetic.
+                // AND THE SAME AT i=0, for the same reason and on the same evidence. The
+                // surface cubic x[0] = x[3] - 3x[2] + 3x[1] is the identical stencil and it
+                // does the identical thing: measured in ATHAD_COND, s_u = -5.012 at 0 m, i.e.
+                // an updraft parcel at -1020 K sitting on a 513 K sea. (ATHAD does not show it
+                // at the surface, because precompute zeroes s_u there and most of its columns
+                // carry no updraft — the same latent defect, exposed by the other fork. A
+                // cross-reference is not a check, but a fork IS a second measurement.) This
+                // file's own comment already records that this stencil "overshoots 7x" at i=0
+                // for the MC_* fields, which is why they are not in this list at all.
                 for (int f = 0; f < n_both; f++) {
                     double*** xf = both_cubic[f]->x;
-                    xf[0][j][k]   = xf[3][j][k]     - 3.0 * xf[2][j][k]     + 3.0 * xf[1][j][k];
-                    xf[iml][j][k] = xf[iml-3][j][k] - 3.0 * xf[iml-2][j][k] + 3.0 * xf[iml-1][j][k];
+                    xf[0][j][k]   = xf[1][j][k];
+                    xf[iml][j][k] = xf[iml-1][j][k];
                 }
 
                 // Pattern D — hydrostatic quantities: cubic at i=0, LOG-LINEAR at the lid.
@@ -766,7 +787,13 @@ public:
         };
         constexpr int n_vn = sizeof(fields_vn) / sizeof(fields_vn[0]);
 
-        Array* fields_cubic[] = {
+        // NAME ONLY, no cubic here: this list gets the same plain copy as fields_vn above
+        // (see the loop). Renamed 2026-08-19 from "fields_cubic", which is what it once was —
+        // a stale name for a stencil the pole argument above already removed. Checked while
+        // repairing the RADIAL cubic (README items 52-53) and found already correct; the name
+        // was the only thing left of the defect, and a name is how the next reader decides
+        // where to look.
+        Array* fields_pole_copy[] = {
             &m.S_c_c, &m.S_v, &m.S_c, &m.S_i, &m.S_r, &m.S_s, &m.S_g,
             &m.q_v_u, &m.q_c_u, &m.u_u, &m.v_u, &m.w_u,
             &m.s, &m.s_u, &m.s_d,
@@ -774,7 +801,7 @@ public:
             &m.Q_Latent, &m.Q_Sensible,
             &m.c_u, &m.e_d, &m.e_l, &m.e_p, &m.g_p
         };
-        constexpr int n_cubic = sizeof(fields_cubic) / sizeof(fields_cubic[0]);
+        constexpr int n_pole_copy = sizeof(fields_pole_copy) / sizeof(fields_pole_copy[0]);
 
         const int jml = m.jm - 1;
 
@@ -788,8 +815,8 @@ public:
                     xf[i][jml][k] = xf[i][jml-1][k];
                 }
 
-                for (int f = 0; f < n_cubic; f++) {
-                    double*** xf = fields_cubic[f]->x;
+                for (int f = 0; f < n_pole_copy; f++) {
+                    double*** xf = fields_pole_copy[f]->x;
                     xf[i][0][k]   = xf[i][1][k];
                     xf[i][jml][k] = xf[i][jml-1][k];
                 }

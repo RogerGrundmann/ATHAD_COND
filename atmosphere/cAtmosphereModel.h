@@ -396,7 +396,8 @@ private:
     std::vector<double> c_land_red;
     std::vector<double> c_ocean_red;
 
-    std::vector<double> CAPE;
+    // CAPE removed 2026-08-19 with computeCAPE(): written, never read, wrong three ways.
+    // cape_col[j][k] in MoistConvection is the real one.
     std::vector<double> K_u;
     std::vector<double> K_d;
 
@@ -683,9 +684,14 @@ public:
     Array e_d;                                                          // evaporation of precipitation in the downdraft
     Array e_l;                                                          // evaporation of cloud water in the environment
     Array e_p;                                                          // evaporation of cloud water in the environment
-    Array s;                                                            // dry static energy
-    Array s_u;                                                          // dry static energy in the updraft
-    Array s_d;                                                          // dry static energy in the downdraft
+    // NOT dry static energy and NOT entropy, despite both names being used for them in this
+    // tree (param.py calls s_0 "entropy at 0 °C"; Results_Atm prints "entropies"). They hold
+    // cp_l*T/s_0 — a NORMALISED TEMPERATURE, dimensionless. Dry static energy is cp*T + g*z
+    // and the g*z is absent: on this 120 km shell it reaches 1.2e6 J/kg against cp*T = 3.4e5
+    // at the cold top, so a parcel conserving s does not cool as it rises. ATHAD README item 52.
+    Array s;                                                            // cp_l*T/s_0, environment
+    Array s_u;                                                          // cp_l*T/s_0, updraft
+    Array s_d;                                                          // cp_l*T/s_0, downdraft
     Array u_u;                                                          // u-velocity component in the updraft
     Array u_d;                                                          // u-velocity component in the downdraft
     Array v_u;                                                          // u-velocity component in the updraft

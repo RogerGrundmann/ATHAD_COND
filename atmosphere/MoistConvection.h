@@ -18,6 +18,44 @@ using namespace AtomUtils;
 
 
 namespace AtomMoistConvection {
+    // PORTED FROM ATHAD 2026-08-19 (its README item 52, its commits of the same day). Every
+    // defect below was found there and verified present here by reading THIS file, not by
+    // assuming the fork shares it — the family's own rule that a cross-reference is not a
+    // check. The magnitudes differ because cp_l does.
+    //
+    // ATM_MC_S_LEGACY=1 restores the three s-scaling defects together:
+    //
+    //  (1) UPDRAFT RECURRENCE divided its whole mass-flux bracket by s_0 while the four
+    //      sibling recurrences beside it (q_v_u, q_c_u, v_u, w_u) divided by nothing. Every
+    //      term in it is already in normalised s, so s_u came out ~2.7e5x too small.
+    //  (2) DOWNDRAFT RECURRENCE divided the whole bracket when only L_latent*r_h*e_d needs
+    //      it — that term is J/(m^3 s), its neighbours are kg/(m^2 s) times a normalised s.
+    //  (3) MC_t CONVERTED s BACK TO KELVIN WITH t_0, which inverts s = cp_l*T/s_0 only if
+    //      s_0 == cp_l*t_0. s_0 = 274515.75 = 1005*273.15 is EARTH'S dry-air cp times t_0 and
+    //      is correct in ATOM_Precipitation; ATHAD_COND sets cp_l = 1349 and kept it, so the
+    //      true factor is s_0/cp_l = 203.50 K, not 273.15, and the convective transport
+    //      heating was cp_l*t_0/s_0 = 1.342x too large. (ATHAD, at cp_l = 2040: 2.03x.)
+    //
+    // MC_t's SECOND term, (L/cp)*conv_src*t_0, is fixed unconditionally below: it was already
+    // K/s before the *t_0. Inherited from ATOM_Precipitation, where it is equally wrong.
+    static const bool s_consistent = [](){
+        const char* e = getenv("ATM_MC_S_LEGACY"); return !(e && atoi(e) != 0); }();
+
+    // ATM_MC_UNBOUNDED_UPDRAFT=1 restores the unbounded updraft scalar recurrence.
+    //
+    // THE REPAIR IS NOT A CLAMP. d(M phi_u)/dz = E*phi - D*phi_u with dM/dz = E - D is
+    // algebraically a convex mixing — expanding gives M dphi_u/dz = E*(phi - phi_u), so
+    // DETRAINMENT CANCELS and phi_u cannot leave the interval spanned by its previous value
+    // and the environment. Discretely that identity needs the denominator to be exactly the
+    // mass the numerator was built from, and three things break it: clamp_M and the
+    // is_land / t_00 kills rewrite M(i) after the fact; E_u is a moisture CONVERGENCE and
+    // goes negative where the flow diverges moisture, which an entrainment rate cannot; and
+    // step*D can exceed M(i-1) on the deep layers. Form the two weights, floor both at zero,
+    // divide by their sum. Bounded by construction, identical to the old expression whenever
+    // nothing was clamped, and it needs no ceiling constant.
+    static const bool updraft_bounded = [](){
+        const char* e = getenv("ATM_MC_UNBOUNDED_UPDRAFT"); return !(e && atoi(e) != 0); }();
+
     constexpr double a_ev = 1.0e-3;
     constexpr double b_ev = 5.9;
     constexpr double t_00 = 236.15;
@@ -128,7 +166,6 @@ public:
             downdraftRecurrence();
         }
 
-        computeCAPE();
         rhsForcing();
         subTerrainFill();
 
@@ -189,7 +226,15 @@ private:
     // larger updraft-moisture seed and convective precipitation follows CC (~7%/K)
     // instead of falling as q_sat outruns a fixed cap. >1 warm, <1 cold, 1 at T_ref.
     double cc_factor(double T_K, double p_hPa) const {
-        constexpr double T_ref_cc = 288.15;                 // [K] reference surface T (15°C)
+        // T_ref_cc WAS 288.15 — EARTH'S mean surface temperature as a bare literal, and the
+        // ratio this helper returns is taken against it. On Earth that makes the factor O(1)
+        // by construction, which is the design ("warmer columns get proportionally more seed
+        // moisture, ~7 %/K"). Off Earth it is a ratio between two different planets: it
+        // inflated the moisture-seed cap q_v_u_add*cc_factor far above any physical mass
+        // fraction (in ATHAD, to 3.47 kg/kg, which is where its impossible q_v_u = 3565 g/kg
+        // came from — injected by the seed, not grown by the recurrence). Referencing the
+        // model's own surface temperature restores the intended meaning on any planet.
+        const double T_ref_cc = 0.5 * (m.t_surf_equator + m.t_surf_pole);
         auto E_sat_of = [&](double T) {
             return (T >= m.t_0)
                 ? SaturationH2O::saturationPressure(T)            // over water
@@ -331,7 +376,6 @@ private:
 
         m.K_u = std::vector<double>(m.im, 0.0);
         m.K_d = std::vector<double>(m.im, 0.0);
-        m.CAPE = std::vector<double>(m.im, 0.0);
 
         // Reset 3-D convection fields so stale values from a previous call
         // cannot corrupt M_u/M_d when the saturation
@@ -1099,12 +1143,45 @@ void findCloudBaseLFS() {
                     double dummy_vel_w_u = M_u_prev * m.w_u.x[i-1][j][k]
                         + step_prev * m.E_u.x[i-1][j][k] * m.w.x[i-1][j][k];
 
+                    // The /s_0 is spurious: every term here is already in normalised s. The
+                    // four recurrences above carry no such division, which is the tell.
                     double dummy_s_u = (M_u_prev * m.s_u.x[i-1][j][k]
                         + step_prev * (m.E_u.x[i-1][j][k] * m.s.x[i-1][j][k]
-                        - m.D_u.x[i-1][j][k] * m.s_u.x[i-1][j][k])) / m.s_0;
+                        - m.D_u.x[i-1][j][k] * m.s_u.x[i-1][j][k]));
+                    if(!s_consistent) dummy_s_u /= m.s_0;
+
+                    // The consistent denominator: the SAME mass the numerator was built from,
+                    // as two non-negative weights (parcel air retained, environment air
+                    // entrained). See ATM_MC_UNBOUNDED_UPDRAFT at the top of this file.
+                    const double w_env = std::max(step_prev * m.E_u.x[i-1][j][k], 0.0);
+                    const double w_par = std::max(M_u_prev - step_prev * m.D_u.x[i-1][j][k], 0.0);
+                    const double M_u_mix = w_par + w_env;
 
                     double M_u_i = m.M_u.x[i][j][k];
-                    if(fabs(M_u_i) > coeff_recurr){
+                    // BOTH tests, deliberately: the repair changes the DENOMINATOR, not which
+                    // cells are active. |M_u_i| > coeff_recurr is the shipped activation test
+                    // and it stays, so the environment fallback fires exactly where it fired
+                    // before. (ATHAD measured what dropping it costs: max MC_t 8.3e-5 -> its
+                    // 0.01 cap at iteration 10. Widening a scheme's active set is a change of
+                    // physics and does not belong in a units repair.)
+                    if(updraft_bounded && M_u_mix > coeff_recurr
+                       && fabs(M_u_i) > coeff_recurr){
+                        const double inv_mix = 1.0 / M_u_mix;
+                        // q_c_u keeps the flux form: its bracket carries genuine SOURCES
+                        // (detrained cloud water, precipitation conversion), so it is not a
+                        // convex combination of anything. It is still divided by the
+                        // consistent mass, which is what removes the M_max/|M| amplification.
+                        m.q_v_u.x[i][j][k] = (w_par * m.q_v_u.x[i-1][j][k]
+                                            + w_env * m.c.x[i-1][j][k]) * inv_mix;
+                        m.q_c_u.x[i][j][k] = dummy_q_c_u * inv_mix;
+                        m.v_u.x[i][j][k]   = (w_par * m.v_u.x[i-1][j][k]
+                                            + w_env * m.v.x[i-1][j][k]) * inv_mix;
+                        m.w_u.x[i][j][k]   = (w_par * m.w_u.x[i-1][j][k]
+                                            + w_env * m.w.x[i-1][j][k]) * inv_mix;
+                        m.s_u.x[i][j][k]   = s_consistent
+                            ? (w_par * m.s_u.x[i-1][j][k] + w_env * m.s.x[i-1][j][k]) * inv_mix
+                            : dummy_s_u / M_u_i;
+                    } else if(!updraft_bounded && fabs(M_u_i) > coeff_recurr){
                         double inv_M_u = 1.0 / M_u_i;
                         m.q_v_u.x[i][j][k] = dummy_q_v_u * inv_M_u;
                         m.q_c_u.x[i][j][k] = dummy_q_c_u * inv_M_u;
@@ -1229,10 +1306,21 @@ void findCloudBaseLFS() {
                         - step_ip1 * (m.E_d.x[i+1][j][k] * m.w.x[i+1][j][k]
                         - m.D_d.x[i+1][j][k] * m.w_d.x[i+1][j][k]);
 
-                    double dummy_s_d = (M_d_ip1 * m.s_d.x[i+1][j][k]
-                        - step_ip1 * (m.E_d.x[i+1][j][k] * m.s.x[i+1][j][k]
-                        - m.D_d.x[i+1][j][k] * m.s_d.x[i+1][j][k]
-                        - L_latent * r_h_ip1 * m.e_d.x[i+1][j][k])) / m.s_0;
+                    // Only the L_latent term needs the /s_0 — it is J/(m^3 s) where its two
+                    // neighbours are kg/(m^2 s) times an already-normalised s. The shipped
+                    // form divided all three. See ATM_MC_S_LEGACY at the top of this file.
+                    double dummy_s_d;
+                    if(s_consistent){
+                        dummy_s_d = M_d_ip1 * m.s_d.x[i+1][j][k]
+                            - step_ip1 * (m.E_d.x[i+1][j][k] * m.s.x[i+1][j][k]
+                            - m.D_d.x[i+1][j][k] * m.s_d.x[i+1][j][k]
+                            - L_latent * r_h_ip1 * m.e_d.x[i+1][j][k] / m.s_0);
+                    } else {
+                        dummy_s_d = (M_d_ip1 * m.s_d.x[i+1][j][k]
+                            - step_ip1 * (m.E_d.x[i+1][j][k] * m.s.x[i+1][j][k]
+                            - m.D_d.x[i+1][j][k] * m.s_d.x[i+1][j][k]
+                            - L_latent * r_h_ip1 * m.e_d.x[i+1][j][k])) / m.s_0;
+                    }
 
                     double M_d_i = m.M_d.x[i][j][k];
                     if(fabs(M_d_i) > coeff_recurr){
@@ -1284,50 +1372,16 @@ void findCloudBaseLFS() {
 *
 */
 // ==================== CAPE ====================
-    void computeCAPE() {
-        using namespace AtomMoistConvection;
+    // computeCAPE() DELETED 2026-08-19, ported from ATHAD. It was a SECOND, wrong CAPE that
+    // nothing read: m.CAPE was written here and never read anywhere in the tree, and the
+    // calculation was wrong three ways — it divided a PHYSICAL thickness step[i] by exp_rm
+    // (the core's quadratic-stretch Jacobian, not a metric this module uses and not the right
+    // one for the grid anyway); its "parcel" was the environment temperature plus a fixed
+    // t_add_u = 0.2 K at every level, so it never lifted anything and never consulted s_u;
+    // and m.CAPE was a 1-D array indexed by LEVEL written inside a (j,k) loop, so the last
+    // column overwrote every other one. cape_col[j][k] in findCloudBaseLFS is the real CAPE —
+    // a theta_e-conserving ascent with local cp and true thicknesses — and it is what seeds M_u.
 
-        m.CAPE.assign(m.im, 0.0);
-
-        for(int k = 0; k < m.km; k++){
-            for(int j = 0; j < m.jm; j++){
-
-                int i_base = i_Base_local[j][k];
-                int i_lfs  = i_LFS_local[j][k];
-
-                // cloud base contribution (mirrors findCloudBase() in MoistConvShall)
-                {
-                    double t_u       = m.t.x[i_base][j][k] * m.t_0;
-                    double t_u_add   = t_u + t_add_u;
-                    double t_vir     = t_u_add * (1.0 + alf * m.q_v_u.x[i_base][j][k]
-                                       - m.q_c_u.x[i_base][j][k]);
-                    double t_vir_env = std::max(t_u * (1.0 + alf * m.c.x[i_base][j][k]
-                                       - cloud.x[i_base][j][k]), 1.0);
-                    double rm        = m.rad.z[i_base];
-                    double exp_rm    = 1.0 / (rm + 1.0);
-                    m.CAPE[i_base]   = m.g * step[i_base]
-                                       / exp_rm * (t_vir - t_vir_env) / t_vir_env;
-                }
-
-                // accumulate CAPE upward through the cloud layer (mirrors convectiveUpdraft() in MoistConvShall)
-                for(int i = i_base; i < i_lfs && i < m.im-1; i++){
-                    double t_u       = m.t.x[i][j][k] * m.t_0;
-                    double t_u_add   = t_u + t_add_u;
-                    double t_vir     = t_u_add * (1.0 + alf * m.q_v_u.x[i][j][k]
-                                       - m.q_c_u.x[i][j][k]);
-                    double t_vir_env = std::max(t_u * (1.0 + alf * m.c.x[i][j][k]
-                                       - cloud.x[i][j][k]), 1.0);
-                    double rm        = m.rad.z[i];
-                    double exp_rm    = 1.0 / (rm + 1.0);
-                    m.CAPE[i+1]      = m.CAPE[i] + m.g * step[i]
-                                       / exp_rm * (t_vir - t_vir_env) / t_vir_env;
-                }
-            }
-        }
-    }
-/*
-*
-*/
 // ==================== RHS FORCING ====================
     void rhsForcing() {
         // Physical caps that break the convective feedback loop
@@ -1406,9 +1460,17 @@ void findCloudBaseLFS() {
 
                     const double cp_mc = AtmMixture::cp_of(m.c.x[i][j][k], m.co2.x[i][j][k],
                                              m.t.x[i][j][k] * m.t_0, m.m_comp.M_bg);
+                    // s -> K uses t_0, which inverts s = cp_l*T/s_0 only if s_0 == cp_l*t_0.
+                    // Here cp_l = 1349 and s_0 was not re-derived, so the true factor is
+                    // s_0/cp_l = 203.50 K and the shipped one over-heats by 1.342x.
+                    // SECOND TERM: (L/cp)*conv_src is ALREADY K/s, so the *t_0 that used to
+                    // stand there made it 273x its own scale, and it is what held MC_t at its
+                    // NEGATIVE cap wherever e_d was appreciable. Removed unconditionally.
+                    const double s_to_K = AtomMoistConvection::s_consistent
+                                        ? (m.s_0 / m.cp_l) : m.t_0;
                     m.MC_t.x[i][j][k] = safe_cap(
-                        -(flux_s_ip1 - flux_s_i) * inv_step_rh * m.t_0                                  // K/s
-                        + (L_latent / cp_mc) * conv_src* m.t_0, MCt_max);                               // K/s
+                        -(flux_s_ip1 - flux_s_i) * inv_step_rh * s_to_K                                 // K/s
+                        + (L_latent / cp_mc) * conv_src, MCt_max);                                      // K/s
 
 
 
