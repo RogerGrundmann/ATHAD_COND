@@ -19,6 +19,63 @@ ground to ~177 km and *nothing condenses*; here water is subcritical everywhere 
 condensation is live from the sea surface up, so the code paths ATHAD spent seventeen
 defect-fixes making inert are the ones this model depends on.
 
+## The CO2 distribution work ported from ATHAD (its README items 56-57, 59)
+
+**This fork had already found half of it, and the half it found was the right half.**
+`ThermoAtm::co2Atmosphere()` did not fill a uniform mass fraction. It stored
+
+    co2(i) = (1 - c(i)) * f_CO2,     f_CO2 = q_CO2/(q_CO2 + q_bg) at the sea = 0.9536
+
+with a comment giving exactly the right reason: the water runs from 0.346 at the sea to 0.004
+above the cold trap, so a uniform MASS fraction would make the background absorb 0.34 of the
+mass and put R aloft at 230 J/(kg K) instead of 195 — an 18 % error through the whole upper
+atmosphere. **ATHAD had the same defect and did not notice it for months**, because its water
+field is nearly uniform (537-739 g/kg, a 1.4x range) and there the two statements coincide.
+
+**WHAT IT COULD NOT DO.** It baked the distribution in ONCE, against the initial water field.
+The moment the water evolves the stored field is stale and the background silently resumes
+absorbing every change — the same defect, deferred by one initialisation. `AtmMixture::q_CO2_of`
+now applies `q_CO2 = co2_stored*(1 - q_v)/(1 - c_0)` CONTINUOUSLY, so the invariant is
+maintained rather than imprinted, and the stored field becomes uniform at `co2_0`.
+
+**THE TWO AGREE EXACTLY AT t = 0**, which is the check that the port preserves what this fork
+got right: `co2_0/(1 - c_0)` = 0.6233/0.6536 = **0.9536** = `f_CO2`. Measured at iteration 10,
+stored field against effective field:
+
+| at | old stored `co2` | new effective `q_CO2` |
+|---|---|---|
+| sea, c = 0.3399 | 0.6296 | 0.6233 x 0.6601/0.6536 = **0.6294** |
+| 70 km, c = 0.0214 | 0.9333 | 0.6233 x 0.9786/0.6536 = **0.9331** |
+
+**AND THE GAS-MASS NORMALISATION IS WHAT MOVES THE ANSWER HERE.** `split()` now takes the
+suspended condensate (cloud + ice + graupel) so the fractions sum to `1 - q_cond`, and
+`densities()`'s `water_factor` divisor — the same correction, applied to `r_humid` alone,
+without graupel, floored at 0.5 — is deleted in the same edit so it is not counted twice.
+In a condensing atmosphere with a sea this is not the second-order effect it is in ATHAD:
+
+| iteration 10-20 | before | after |
+|---|---|---|
+| OLR | 281.77 W/m2 | **272.95** (-3.1 %) |
+| imbalance (in - out) | -10.99 W/m2 | **-2.17** (-80 %) |
+| `Psi_max` @ 20 | 42218.93 | 40959.17 (-3.0 %) |
+| co2 column average | 438312.257 | 438259.583 (-0.012 %) |
+| max water vapour | 339.932 g/kg | 339.943 |
+| mean albedo | 0.5000 | 0.5000 |
+
+ATHAD's equivalent OLR shift was -0.11 %. **The 28x difference is the condensate**: ATHAD's is
+12-47 g/kg confined to a thin band, this fork condenses throughout. Early-iteration numbers, not
+converged, and the imbalance falling to -2.17 W/m2 is NOT a claim that the budget now closes —
+it is one arm of a comparison at iteration 10.
+
+**A DESIGN FLAW THE COND SELF-TEST CAUGHT ON THE FIRST RUN.** `carrierRef()` was set inside
+`AtmMixture::resolve()` — the one function that knows the configured composition, so it looked
+like the natural home. But `resolve()` is a pure function any caller may invoke with any
+composition, and `cond_column_selftest.cpp` calls it with a near-dry one. That left
+`carrierRef()` at 0.9957 instead of 0.6536 and moved `M_nonwater` from 42.88 to 36.27 g/mol.
+**A global written by whoever called last is not a reference.** It is now set once, explicitly,
+by `initComposition()` from `c_0` — the water content `co2_0` is quoted at — and the same repair
+went back into ATHAD, where the two happened to coincide and the bug was invisible.
+
 ## Repository layout
 
 ```

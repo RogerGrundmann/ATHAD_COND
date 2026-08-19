@@ -130,7 +130,13 @@ namespace IceSchemeCommon {
             // AtmMixture::split() renormalises defensively, so the violation showed only
             // as a gas constant that had quietly saturated. Returning the condensate to
             // the vapour must not create one: take it up to the ceiling and no further.
-            const double c_max  = std::max(0.0, 1.0 - m.co2.x[i][j][k]);
+            // Item 57: with the carrier renormalised, q_v + q_CO2 + q_bg == 1 - q_cond for ANY
+            // q_v — the carrier shrinks as water grows — so the old c <= 1 - co2 ceiling has no
+            // meaning under that convention and 1.0 is the real bound on a mass fraction. It
+            // mattered more here than in ATHAD: with co2 pinned at 0.6233 the ceiling sat at
+            // 0.3767, only 9 % above the sea-surface water content.
+            const double c_max  = AtmMixture::co2_dilute()
+                                ? 1.0 : std::max(0.0, 1.0 - m.co2.x[i][j][k]);
             const double c_new  = std::min(c_max, m.c.x[i][j][k] + q_cond);
             const double q_used = std::max(0.0, c_new - m.c.x[i][j][k]);
 
@@ -171,7 +177,8 @@ namespace IceSchemeCommon {
                              + std::max(0.0, m.P_snow.x[i][j][k])    / (v_snow    * rho)
                              + std::max(0.0, m.P_graupel.x[i][j][k]) / (v_graupel * rho);
             if (q_p > 0.0) {
-                const double c_max = std::max(0.0, 1.0 - m.co2.x[i][j][k]);
+                const double c_max = AtmMixture::co2_dilute()          // item 57, see above
+                                   ? 1.0 : std::max(0.0, 1.0 - m.co2.x[i][j][k]);
                 m.c.x[i][j][k] = std::min(c_max, m.c.x[i][j][k] + q_p);
             }
         }

@@ -174,7 +174,12 @@ public:
                     if (dp_Pa < 0.0) dp_Pa = 0.0;
 
                     const double q_v = std::max(0.0, m.c.x[i][j][k]);
-                    const double q_c = std::max(0.0, m.co2.x[i][j][k]);
+                    // LOCAL CO2 mass fraction, not the field read raw (items 57/59). Here the
+                    // difference is large: pinning q_c understated the CO2 optical depth aloft
+                    // by ~50 %, because kappa_CO2 = 1e-3 against kappa_bg = 1e-6 and the old
+                    // split was handing 0.31 of the mass to the background at the top.
+                    const double q_c = std::max(0.0, AtmMixture::q_CO2_of(m.c.x[i][j][k],
+                                                                          m.co2.x[i][j][k]));
                     const double q_b = std::max(0.0, 1.0 - q_v - q_c);
 
                     const double u_col = dp_Pa * inv_g;               // [kg/m2] total layer mass

@@ -452,6 +452,7 @@ private:
     void initTemperatureData(int Ma);
 
     void initWaterWapour();
+    void initCO2();                 // the CO2 initial condition; must precede initTemperatureData
     void initCloudIce();
     void init_vapour_cloud();
     void cloudiness_backup();

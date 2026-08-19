@@ -927,6 +927,82 @@ void cAtmosphereModel::initWaterWapour() {
 /*
 *
 */
+// ===========================================================================
+// initCO2 — the CO2 initial condition. Ported from ATHAD (its README items 56-57, 59), and
+// the port is a SIMPLIFICATION here rather than a new idea, because this fork had already
+// found half of it.
+//
+// WHAT WAS HERE. ThermoAtm::co2Atmosphere() stored the local mass fraction directly,
+//
+//     co2(i) = (1 - c(i)) * f_CO2,     f_CO2 = q_CO2/(q_CO2 + q_bg) at the sea = 0.9536
+//
+// with a comment explaining exactly why a uniform MASS fraction is wrong here: the water runs
+// from 0.346 at the sea to 0.004 above the cold trap, so holding the mass fraction uniform
+// makes the background absorb 0.34 of the mass and puts R aloft at 230 J/(kg K) instead of
+// 195 — an 18 % error through the whole upper atmosphere. That reasoning was right.
+//
+// WHAT IT COULD NOT DO. It baked the distribution in ONCE, against the initial water field. As
+// soon as the water evolves, the stored field is stale and the background silently resumes
+// absorbing every change — the same defect, deferred by one initialisation.
+//
+// AtmMixture::q_CO2_of now applies q_CO2 = co2_stored*(1-q_v)/(1-c_0) CONTINUOUSLY, so the
+// invariant is maintained instead of imprinted. The stored field therefore becomes UNIFORM at
+// co2_0 and the height dependence is produced on demand. The two agree exactly at t = 0:
+//
+//     co2_0/(1 - c_0) = 0.6233/0.6536 = 0.9536 = f_CO2
+//
+// so q_CO2_of(c, co2_0) IS (1 - c)*f_CO2, the identical field, and it stays that field
+// afterwards. One mechanism, applied continuously, replacing one applied once.
+//
+// ORDERING IS A CONTRACT (ATHAD item 22): this must precede initTemperatureData and
+// densities(), which read the composition through R_of and cp_of. And note what the change
+// buys upstream: co2Atmosphere() had to sit INSIDE the two-pass loop with densities() because
+// the stored field followed c. It no longer does, so the CO2 half of that iteration is gone.
+// ===========================================================================
+void cAtmosphereModel::initCO2() {
+    std::cout << "\n\n\n      AGCM: initCO2" << std::endl;
+    auto begin = std::chrono::high_resolution_clock::now();
+
+    const double co2_ref = co2_0 * co2_scale;                           // [kg/kg] at the sea
+
+    // ATM_CO2_INIT_PERTURB — amplitude of a DELIBERATELY ARTIFICIAL vertical gradient on the
+    // initial field, default 0.0 (bit-identical: the factor is exactly 1.0). A MEASUREMENT
+    // TOOL, not a claim: a source-free tracer laid down uniformly has nothing to transport, so
+    // the CO2 transport and its convective redistribution are untested rather than tested and
+    // found working. Anything measured with this set describes the numerics.
+    static const double perturb = [](){
+        const char* e = getenv("ATM_CO2_INIT_PERTURB"); return e ? atof(e) : 0.0; }();
+
+    const double z_top = std::max(1.0, (double)get_layer_height(im - 1));
+
+    #pragma omp parallel for collapse(2)
+    for (int j = 0; j < jm; j++)
+        for (int k = 0; k < km; k++)
+            for (int i = 0; i < im; i++) {
+                // linear in TRUE height, not in the grid index — the stretch makes those very
+                // different things.
+                const double shape = 1.0 - 2.0 * (double)get_layer_height(i) / z_top;
+                co2.x[i][j][k] = co2_ref * (1.0 + perturb * shape);
+            }
+
+    std::cout.precision(6);
+    if (perturb != 0.0)
+        std::cout << "      AGCM: co2 initialised with an ARTIFICIAL vertical gradient, amplitude "
+                  << perturb << " — transport test only" << std::endl;
+    else
+        std::cout << "      AGCM: co2 uniform at " << co2_ref
+                  << " kg/kg at the sea-surface water content; q_CO2_of makes the DRY-AIR ratio "
+                  << "uniform with height (co2_0 = " << co2_0
+                  << ", co2_scale = " << co2_scale << ")" << std::endl;
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+    printf(" Time measured: %.3f seconds for initCO2\n", elapsed.count() * 1e-9);
+    std::cout << "      AGCM: initCO2 ended" << std::endl;
+}
+/*
+*
+*/
 void cAtmosphereModel::initCloudIce() {
     std::cout << "\n\n\n      AGCM: initCloudIce" << std::endl;
 

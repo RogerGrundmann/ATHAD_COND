@@ -894,69 +894,13 @@ public:
     }
 
     // ------------------------------------------------------------------
-    // ATHAD: CO2 is a well-mixed MASS FRACTION, uniform in the vertical.
-    //
-    // The Earth version built a ppm profile — a surface value scaled by local
-    // temperature plus a paleo increment, decaying parabolically to a fixed tropopause
-    // concentration, with separate vegetation / ocean / land ppm budgets and an Earth
-    // regression in t_equat_modern for the "mean CO2 at modern times".
-    //
-    // None of that has a subject in the Hadean: there is no biosphere to draw CO2 down,
-    // no carbonate-silicate ocean sink to absorb it, and no land. CO2 is simply 10 % of
-    // the atmosphere by mole (20.5 % by mass) and stays where it is put. The vertical
-    // gradient the parabola imposed encoded Earth's surface sources and stratospheric
-    // depletion, so imposing it here would be inventing structure.
-    //
-    // Units: the field is now kg/kg, not ppm. At 20.5 % by mass ppm is meaningless, and
-    // every consumer (the mixture properties, the radiative optical depth) wants a
-    // fraction. co2_scale still multiplies the field for sensitivity experiments.
-    void co2Atmosphere()
-    {
-        using namespace std;
-        cout << endl << endl << endl << "      AGCM: co2_atmosphere" << endl;
-
-        const double co2_ref = m.co2_0 * m.co2_scale;                   // [kg/kg] at the sea
-
-        // ATHAD_COND: "well mixed" is a statement about the DRY air, not about the
-        // mass fraction.
-        //
-        // ATHAD set co2 to one uniform mass fraction everywhere, and that was right there:
-        // its water field is uniform too, so a uniform CO2 mass fraction and a uniform
-        // CO2:background ratio are the same statement. Here the water mass fraction runs
-        // from 0.346 at the sea to 0.004 above the cold trap, and the two statements come
-        // apart. Holding the MASS fraction uniform would mean the non-water air changes
-        // composition with height — the background would have to make up all 0.34 of the
-        // mass the water vacates — and the column's gas constant then settles at 230 J/(kg K)
-        // aloft instead of the 195 the dry composition actually has. An 18 % error in R
-        // through the entire upper atmosphere, from a field that is not supposed to have
-        // any structure at all.
-        //
-        // What is physically well mixed is the CO2:background MOLE ratio, and since that
-        // ratio is fixed, so is their mass ratio within the dry air:
-        //
-        //     q_CO2(i) = (1 - c(i)) * f_CO2,     f_CO2 = q_CO2 / (q_CO2 + q_bg) at the sea
-        //
-        // This keeps CO2 a passive, source-free tracer — the conservation test in
-        // co2Column() is unchanged — while making the dry mixture it belongs to uniform,
-        // which is the thing that was meant. The uniformity diagnostic has to change with
-        // it: min == max on co2 was ATHAD's test, and here the invariant is that
-        // co2/(1-c) is constant instead.
-        const double f_CO2 = (m.m_comp.q_CO2 + m.m_comp.q_bg > 0.0)
-                           ? m.m_comp.q_CO2 / (m.m_comp.q_CO2 + m.m_comp.q_bg)
-                           : co2_ref;
-
-        #pragma omp parallel for collapse(2) schedule(static)
-        for (int j = 0; j < m.jm; j++)
-            for (int k = 0; k < m.km; k++)
-                for (int i = 0; i < m.im; i++)
-                    m.co2.x[i][j][k] = (1.0 - m.c.x[i][j][k]) * f_CO2 * m.co2_scale;
-
-        cout.precision(6);
-        cout << "      AGCM: co2 well mixed in the DRY air at f_CO2 = " << f_CO2
-             << " kg/kg of non-water (co2_0 = " << m.co2_0
-             << " at the sea, co2_scale = " << m.co2_scale << ")" << endl;
-        cout << "      AGCM: co2_atmosphere ended" << endl;
-    }
+    // co2Atmosphere() REMOVED: the CO2 initial condition is cAtmosphereModel::initCO2(), in
+    // InitValues_Atm.cpp with the other initialisers. Its (1 - c)*f_CO2 distribution was
+    // RIGHT and is preserved exactly — AtmMixture::q_CO2_of now produces it from a uniform
+    // stored field, continuously rather than once, so it can no longer go stale when the
+    // water field evolves. co2_0/(1 - c_0) = 0.9536 = f_CO2, so the two are the same field
+    // at t = 0. See initCO2 for the full argument.
+    // ------------------------------------------------------------------
 
     // ------------------------------------------------------------------
     // Global TOTAL-water conservation check.
@@ -1154,7 +1098,8 @@ public:
                     if (!(dp_Pa > 0.0)) continue;
 
                     const double u_air = dp_Pa / m.g;                       // [kg/m2]
-                    const double q_c   = std::max(0.0, m.co2.x[i][j][k]);
+                    const double q_c   = std::max(0.0, AtmMixture::q_CO2_of(m.c.x[i][j][k],
+                                                                            m.co2.x[i][j][k]));
 
                     col   += q_c * u_air;
                     w_den += coslat * u_air;
@@ -1597,7 +1542,11 @@ public:
                 for (int i = 0; i < m.im; i++) {
                     const double q_v = m.c.x[i][j][k];
                     const double q_c = m.co2.x[i][j][k];
-                    const double R_loc = AtmMixture::R_of(q_v, q_c, R_bg);
+                    // Suspended condensate is part of the parcel's mass, so it is part of what
+                    // the carrier is normalised against (item 59). GRAUPEL INCLUDED — the
+                    // water_factor this replaces counted cloud and ice only.
+                    const double q_l = m.cloud.x[i][j][k] + m.ice.x[i][j][k] + m.gr.x[i][j][k];
+                    const double R_loc = AtmMixture::R_of(q_v, q_c, R_bg, q_l);
 
                     double T_i, p_i;
                     if (i == 0) {
@@ -1684,9 +1633,13 @@ public:
                         m.c.x[i][j][k] = std::max(q_sat_min, m.c_h2o_dry_top);
                     }
 
-                    const double water_factor = std::max(0.5, 1.0
-                                        - m.cloud.x[i][j][k] - m.ice.x[i][j][k]);
-                    m.r_humid.x[i][j][k] = 1e2 * p_i / (R_loc * T_i * water_factor);
+                    // water_factor DELETED (item 59). It was the gas-mass normalisation applied
+                    // here and nowhere else, partial (no graupel) and floored at 0.5. R_of now
+                    // carries it for every consumer: the fractions it weights sum to 1 - q_cond,
+                    // so R_loc IS (1 - q_cond)*R_gas and this quotient is the total density with
+                    // no extra divisor. Applying both would count the condensate twice. The
+                    // floor moves onto R_loc, which is what the 0.5 was really guarding.
+                    m.r_humid.x[i][j][k] = 1e2 * p_i / (std::max(R_loc, 1.0) * T_i);
 
                     const double R_dry_loc = AtmMixture::R_of(0.0, q_c, R_bg);
                     m.r_dry.x[i][j][k]     = 1e2 * p_i / (R_dry_loc * T_i);

@@ -136,6 +136,11 @@ void cAtmosphereModel::initComposition(){
     m_comp = AtmMixture::resolve(x_H2O, x_CO2, x_N2, x_CH4,
                                  x_NH3, x_H2,  x_CO, x_SO2);
 
+    // The reference non-water carrier for AtmMixture::q_CO2_of, from c_0 — the water mass
+    // fraction that co2_0 is quoted at. Set here, once, and NOT inside resolve(): see the
+    // note at carrierRef() for what happened when it lived there.
+    AtmMixture::carrierRef() = 1.0 - c_0;
+
     cout << endl << endl << "      AGCM: atmospheric composition (ATHAD)" << endl << endl;
     cout.precision(6);
     cout << "        species    mole frac.    mass frac." << endl;
@@ -666,8 +671,12 @@ void cAtmosphereModel::RunTimeSlice(int Ma){
     // dependence is left iterating, and that one is weak (co2 enters through R and cp, not
     // through the latent heat), so two passes settle it to the fourth digit.
     initWaterWapour();
+    initCO2();                                                          // uniform; q_CO2_of makes the dry-air ratio uniform
     for (int pass = 0; pass < 2; pass++) {
-        ThermoAtm(*this).co2Atmosphere();                               // co2 well mixed in the dry air
+        // The CO2 half of this iteration is GONE. co2Atmosphere() had to run inside the loop
+        // because the stored field was (1 - c)*f_CO2 and so chased c; the stored field is now
+        // uniform and the dry-air ratio is applied on demand by AtmMixture::q_CO2_of, so
+        // nothing about CO2 needs iterating. The passes remain for the water profile.
         ThermoAtm(*this).densities(true);                               // T, p AND the water profile
     }
     initCloudIce();
@@ -727,12 +736,11 @@ void cAtmosphereModel::RunTimeSlice(int Ma){
     }
 
     UtilsAtm(*this) .precipitationSum();
-    // ATHAD: co2Atmosphere() must run BEFORE densities(). The CO2 field is now a
-    // mass fraction that enters the local mixture gas constant R_of(c, co2), so a
-    // density built before it is set uses R_of(c, 0) = 414.2 instead of 387.9 —
-    // a 7 % density error through the whole column. On Earth the ordering was
-    // harmless because co2 was in ppm and never touched the density.
-    ThermoAtm(*this).co2Atmosphere();                                   // INITIAL well-mixed CO2 mass fraction
+    // ATHAD: initCO2() must run BEFORE densities(). The CO2 field is a mass fraction that
+    // enters the local mixture gas constant R_of(c, co2), so a density built before it is set
+    // uses R_of(c, 0) = 414.2 instead of 387.9 — a 7 % density error through the whole column.
+    // On Earth the ordering was harmless because co2 was in ppm and never touched the density.
+    initCO2();                                                          // INITIAL CO2 field
     ThermoAtm(*this).co2Column(true);                                   // column CO2 path + the conservation reference
     ThermoAtm(*this).waterBudget(true);                                 // total-water conservation reference
     ThermoAtm(*this).densities();
