@@ -183,6 +183,38 @@ public:
         long n_src_clamped = 0, n_src_cells = 0;
 
         // ==================================================================
+        // ONE GAUSS-SEIDEL SWEEP PER CALL IS NOT AN ELLIPTIC SOLVE.
+        //
+        // run() is called once per physics iteration and did exactly ONE relaxation sweep. One
+        // sweep moves information one cell, so the elliptic problem is never solved: p_dyn is a
+        // local smoothing of the divergence, not the global pressure response of the flow. A
+        // pressure gradient that balances a Coriolis torque is global — it has to span the cell
+        // — and one sweep per step cannot construct it.
+        //
+        // Ported from ATHAD (its README item 54), where raising the count is what ruled the
+        // solver IN or OUT as the cause of a p_dyn with no radial structure. THAT QUESTION IS
+        // DIFFERENT HERE and the knob is worth more, not less: ATHAD's p_dyn is 99.97 % a
+        // prescribed balanced initial state, so its flow-driven part is swamped whatever the
+        // solver does. This fork has no initBalancedState at all — p_dyn starts identically
+        // zero and everything in it is built by the flow through this routine — so the sweep
+        // count is the ONLY thing between the divergence and the pressure that removes it.
+        // Measured at one sweep: radial range / latitudinal range = 0.199 at j=45.
+        //
+        // Default 1, so the model is bit-identical unless the knob is set. Cost is linear in
+        // the count. The diagnosis and the knob are both ATURAN's shared PressureSolver.h
+        // (<TAG>_PRESS_SWEEPS), which has carried this note for its whole history.
+        // ==================================================================
+        static const int n_sweeps = [](){ const char* e = getenv("ATM_PRESS_SWEEPS");
+                                          const int v = e ? atoi(e) : 1;
+                                          return v > 0 ? v : 1; }();
+
+        for (int sweep = 0; sweep < n_sweeps; sweep++) {
+
+        // The clamp counters describe the LAST sweep only, so the reported fraction stays
+        // comparable with the single-sweep runs rather than being multiplied by the count.
+        if (sweep == n_sweeps - 1) { n_src_clamped = 0; n_src_cells = 0; }
+
+        // ==================================================================
         // THE RELAXATION IS RED-BLACK, AND WAS NOT ALWAYS.
         //
         // Each solve is two passes over a checkerboard colouring of (i+j+k): every cell of
@@ -484,6 +516,7 @@ public:
         } // i
 
         } // colour
+        } // sweep
 
         #undef LAND
 
