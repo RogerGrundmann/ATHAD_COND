@@ -19,6 +19,44 @@ ground to ~177 km and *nothing condenses*; here water is subcritical everywhere 
 condensation is live from the sea surface up, so the code paths ATHAD spent seventeen
 defect-fixes making inert are the ones this model depends on.
 
+## ATM_PRESS_SWEEPS: the elliptic solve is under-converged by ~10x, and Psi pays 28 % for it
+
+The knob ported from ATHAD (its README item 54) answers here a question it could not answer
+there. In ATHAD 99.97 % of `p_dyn` is a prescribed balanced initial state, so the solver's
+contribution is swamped whatever it does. **This fork has no `initBalancedState`: `p_dyn` starts
+identically zero and every bit of it is built by the flow through the Poisson solve**, which
+makes the sweep count the only thing between the divergence and the pressure that removes it.
+
+Iteration 20, same config, one binary, the knob the only difference:
+
+| | `p_dyn` min | `p_dyn` max | radial range j=45 | latitudinal range | ratio | `Psi_max` |
+|---|---|---|---|---|---|---|
+| 1 sweep (shipped) | -0.00566 | 0.00854 | 0.00191 | 0.00814 | 0.235 | 40959.17 |
+| 10 sweeps | -0.04454 | 0.05898 | **0.01588** | **0.08209** | 0.193 | **29436.77** |
+
+**`p_dyn` grows by an order of magnitude and `Psi_max` falls 28 %.** The shipped one-sweep field
+is not a converged pressure — it is about a tenth of one — and the meridional circulation is
+being held up in part by a projection that has not finished removing the divergence. **That is a
+larger effect on Psi than anything else measured in either tree this week**: the metric terms
+(ATHAD item 58) net to zero at 400 iterations, the CO2 dilution moves it 3 %.
+
+**The radial structure was never what the solver was failing to build.** The radial/latitudinal
+ratio barely moves, 0.235 -> 0.193: ten sweeps build the WHOLE field roughly in proportion. So
+under-convergence is an amplitude problem, not a shape problem, and item 54's radial question and
+this one are genuinely separate.
+
+**TWO THINGS THIS DOES NOT ESTABLISH, and the second is a confound in the table above.**
+
+- **10 sweeps is not converged either.** A 50-sweep arm was launched and abandoned: see below.
+  Nothing here says where the amplitude saturates, only that it is still climbing at 10.
+- **THE KNOB ALSO MULTIPLIES THE INITIAL PROJECTION.** `project_initial_velocity` calls `run()`
+  200 times, so `ATM_PRESS_SWEEPS=10` makes the startup 2000 relaxation passes instead of 200 —
+  the 10-sweep arm therefore differs from the 1-sweep arm in its INITIAL STATE as well as in its
+  per-iteration solve, and the 28 % cannot be attributed cleanly between them. Separating them
+  needs a second knob. This is also why the 50-sweep arm was abandoned: 200 x 50 = **10 000**
+  startup sweeps, which had not finished the projection when the run was killed. The cost of the
+  knob is not linear in the count as its comment says — it is linear in the count TWICE.
+
 ## The CO2 distribution work ported from ATHAD (its README items 56-57, 59)
 
 **This fork had already found half of it, and the half it found was the right half.**
