@@ -19,43 +19,48 @@ ground to ~177 km and *nothing condenses*; here water is subcritical everywhere 
 condensation is live from the sea surface up, so the code paths ATHAD spent seventeen
 defect-fixes making inert are the ones this model depends on.
 
-## ATM_PRESS_SWEEPS: the elliptic solve is under-converged by ~10x, and Psi pays 28 % for it
+## The sweep count: p_dyn's amplitude and Psi are DECOUPLED, and the 28 % was the initial projection
 
-The knob ported from ATHAD (its README item 54) answers here a question it could not answer
-there. In ATHAD 99.97 % of `p_dyn` is a prescribed balanced initial state, so the solver's
-contribution is swamped whatever it does. **This fork has no `initBalancedState`: `p_dyn` starts
-identically zero and every bit of it is built by the flow through the Poisson solve**, which
-makes the sweep count the only thing between the divergence and the pressure that removes it.
+**The first version of this section attributed a 28 % drop in `Psi_max` to the time-loop solve.
+That was wrong, and the confound noted at the bottom of it turned out to be the entire effect.**
+`ATM_PRESS_SWEEPS` was doing two jobs — `project_initial_velocity` makes 200 passes through
+`run()`, so raising the knob multiplied the startup projection by the same factor.
+`ATM_PROJ_SWEEPS` now separates them. Three arms, iteration 20, one binary:
 
-Iteration 20, same config, one binary, the knob the only difference:
+| | `p_dyn` min | `p_dyn` max | radial j=45 | latitudinal | `Psi_max` |
+|---|---|---|---|---|---|
+| loop 1, proj 200x1 — shipped | -0.00566 | 0.00854 | 0.00191 | 0.00814 | 40959.17 |
+| loop 10, proj 200x1 — **loop alone** | -0.04454 | 0.05899 | 0.01587 | 0.08211 | **40959.80** |
+| loop 10, proj 200x10 — both | -0.04454 | 0.05898 | 0.01588 | 0.08209 | **29436.77** |
 
-| | `p_dyn` min | `p_dyn` max | radial range j=45 | latitudinal range | ratio | `Psi_max` |
-|---|---|---|---|---|---|---|
-| 1 sweep (shipped) | -0.00566 | 0.00854 | 0.00191 | 0.00814 | 0.235 | 40959.17 |
-| 10 sweeps | -0.04454 | 0.05898 | **0.01588** | **0.08209** | 0.193 | **29436.77** |
+**THE LOOP SWEEPS GROW `p_dyn` TENFOLD AND LEAVE THE CIRCULATION ALONE.** Isolated, ten sweeps
+per iteration take the dynamic pressure from a range of 0.014 to 0.104 — the shipped field is
+about a tenth of a converged one, which is real — and `Psi_max` moves by **+0.0015 %**,
+40959.17 to 40959.80.
 
-**`p_dyn` grows by an order of magnitude and `Psi_max` falls 28 %.** The shipped one-sweep field
-is not a converged pressure — it is about a tenth of one — and the meridional circulation is
-being held up in part by a projection that has not finished removing the divergence. **That is a
-larger effect on Psi than anything else measured in either tree this week**: the metric terms
-(ATHAD item 58) net to zero at 400 iterations, the CO2 dilution moves it 3 %.
+**THE 28 % IS THE INITIAL PROJECTION, ALL OF IT.** The only difference between the second and
+third arms is 2000 startup relaxations instead of 200, and it costs `Psi_max` 11 523 units.
+Their `p_dyn` fields at iteration 20 are identical to four digits, so the projection is not
+leaving a different pressure behind — it leaves a different VELOCITY. `project_initial_velocity`
+applies `v <- v - grad p` and then clears `p_dyn`; with ten times the relaxation it removes more
+of the initial divergence, the circulation starts weaker, and `Psi` carries that difference
+forward while the pressure re-equilibrates to the same amplitude either way.
 
-**The radial structure was never what the solver was failing to build.** The radial/latitudinal
-ratio barely moves, 0.235 -> 0.193: ten sweeps build the WHOLE field roughly in proportion. So
-under-convergence is an amplitude problem, not a shape problem, and item 54's radial question and
-this one are genuinely separate.
+**So the two counts answer two different questions and neither substitutes for the other.** The
+time-loop solve sets the amplitude of `p_dyn` and, at least over 20 iterations, nothing else.
+The initial projection sets the circulation. **Every `Psi` number in this fork therefore depends
+on how well the initial velocity field was projected, and 200 x 1 was never chosen — it is the
+default of a routine written for a different purpose.**
 
-**TWO THINGS THIS DOES NOT ESTABLISH, and the second is a confound in the table above.**
+That also puts the earlier reading of `p_dyn`'s radial structure in its place: the
+radial/latitudinal ratio is 0.235 at one sweep and 0.193 at ten, so more solver work builds the
+whole field in proportion. Under-convergence is an amplitude problem, not a shape one, and it is
+not what makes `p_dyn` two-dimensional here — the absence of a balanced initial state is.
 
-- **10 sweeps is not converged either.** A 50-sweep arm was launched and abandoned: see below.
-  Nothing here says where the amplitude saturates, only that it is still climbing at 10.
-- **THE KNOB ALSO MULTIPLIES THE INITIAL PROJECTION.** `project_initial_velocity` calls `run()`
-  200 times, so `ATM_PRESS_SWEEPS=10` makes the startup 2000 relaxation passes instead of 200 —
-  the 10-sweep arm therefore differs from the 1-sweep arm in its INITIAL STATE as well as in its
-  per-iteration solve, and the 28 % cannot be attributed cleanly between them. Separating them
-  needs a second knob. This is also why the 50-sweep arm was abandoned: 200 x 50 = **10 000**
-  startup sweeps, which had not finished the projection when the run was killed. The cost of the
-  knob is not linear in the count as its comment says — it is linear in the count TWICE.
+**Limits.** 20 iterations, one arm each, and ten sweeps is not converged either: a 50-sweep arm
+was abandoned when 200 x 50 startup passes proved impractical, which is what forced the knobs
+apart in the first place. What is established is the DECOUPLING and the attribution, not where
+either count saturates.
 
 ## The CO2 distribution work ported from ATHAD (its README items 56-57, 59)
 
