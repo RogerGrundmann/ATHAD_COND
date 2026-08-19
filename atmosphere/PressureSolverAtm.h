@@ -24,7 +24,10 @@ public:
         : m(model)
     {}
 
-    void run(bool verbose = true)
+    // sweeps_override > 0 replaces ATM_PRESS_SWEEPS for THIS call. It exists so
+    // project_initial_velocity can hold its own sweep count independent of the time loop's —
+    // see the note there. -1 (the default) means "use the knob".
+    void run(bool verbose = true, int sweeps_override = -1)
     {
         using namespace std;
         if (verbose) cout << endl << endl << endl << "      ATOM: PressureSolverAtm" << endl;
@@ -204,9 +207,10 @@ public:
         // the count. The diagnosis and the knob are both ATURAN's shared PressureSolver.h
         // (<TAG>_PRESS_SWEEPS), which has carried this note for its whole history.
         // ==================================================================
-        static const int n_sweeps = [](){ const char* e = getenv("ATM_PRESS_SWEEPS");
-                                          const int v = e ? atoi(e) : 1;
-                                          return v > 0 ? v : 1; }();
+        static const int n_sweeps_knob = [](){ const char* e = getenv("ATM_PRESS_SWEEPS");
+                                               const int v = e ? atoi(e) : 1;
+                                               return v > 0 ? v : 1; }();
+        const int n_sweeps = (sweeps_override > 0) ? sweeps_override : n_sweeps_knob;
 
         for (int sweep = 0; sweep < n_sweeps; sweep++) {
 
@@ -716,8 +720,24 @@ public:
     // projection pressure; we then apply v ← v − ∇p in the same metric form used
     // by the time-stepping RHS, and reset p_dyn to 0 so the next RK4 call does not
     // double-correct via its own −∂p/∂r term.
+    // ATM_PROJ_SWEEPS — relaxation sweeps PER PASS of the initial projection, default 1.
+    //
+    // THIS EXISTS BECAUSE THE TWO COUNTS WERE ENTANGLED AND THE ENTANGLEMENT CORRUPTED A
+    // MEASUREMENT. This routine makes 200 passes, each a call to run(), and run() honours
+    // ATM_PRESS_SWEEPS — so setting that knob to 10 to study the TIME LOOP silently made the
+    // startup projection 2000 relaxations instead of 200, and the arms of the comparison then
+    // differed in their INITIAL STATE as well as in the quantity under test. The 28 % drop in
+    // Psi_max first measured that way could not be attributed between the two.
+    //
+    // Default 1 restores the historical 200 passes x 1 sweep whatever ATM_PRESS_SWEEPS is set
+    // to, so ATM_PRESS_SWEEPS now varies the time loop ALONE, which is what it was always meant
+    // to do. Raise ATM_PROJ_SWEEPS deliberately to study the initial projection on its own.
     void project_initial_velocity(int n_sweeps = 200)
     {
+        static const int proj_sweeps = [](){
+            const char* e = getenv("ATM_PROJ_SWEEPS");
+            const int v = e ? atoi(e) : 1;
+            return v > 0 ? v : 1; }();
         using namespace std;
         cout << endl << endl << "      ATOM: project_initial_velocity ("
              << n_sweeps << " Jacobi sweeps)" << endl;
@@ -740,7 +760,7 @@ public:
         // pressure.  Each call to run() also re-applies the i, theta, and phi BCs on
         // p_dyn, so polar/topographic anchors stay consistent with the time loop.
         for (int s = 0; s < n_sweeps; s++) {
-            run(false);
+            run(false, proj_sweeps);
         }
 
         // Step 3 — gradient correction v ← v − ∇p_dyn in the interior.
