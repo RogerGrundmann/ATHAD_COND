@@ -545,6 +545,20 @@ void cAtmosphereModel::paraview_vtk_radial(string &Name_Bathymetry_File,
 //    dump_radial("Q_Sensible", Q_Sensible, 1e-3, i_radial, Atmosphere_vtk_radial_File);
 
     dump_radial("CO2", co2, 1.0, i_radial, Atmosphere_vtk_radial_File);
+    // per-species background mass fractions
+    for (int n = 0; n < 6; n++) {
+        Atmosphere_vtk_radial_File << "SCALARS q_" << AtmMixture::BG_NAMES()[n] << " float " << 1 << "\n";
+        Atmosphere_vtk_radial_File << "LOOKUP_TABLE default" << "\n";
+        const double f_n = m_comp.f_bg[n];
+        for(int j = 0; j < jm; j++){
+            for(int k = 0; k < km; k++){
+                double q_v, q_c, q_b;
+                const double q_l = cloud.x[i_radial][j][k] + ice.x[i_radial][j][k] + gr.x[i_radial][j][k];
+                AtmMixture::split(c.x[i_radial][j][k], co2.x[i_radial][j][k], q_v, q_c, q_b, q_l);
+                Atmosphere_vtk_radial_File << safe_val(q_b * f_n) << "\n";
+            }
+        }
+    }
 
     if(turb_model != "laminar"){
         dump_radial("TKE",        tke,        1.0, i_radial, Atmosphere_vtk_radial_File);
@@ -766,6 +780,20 @@ void cAtmosphereModel::paraview_vtk_zonal(string &Name_Bathymetry_File,
 //    dump_zonal("Q_Sensible", Q_Sensible, 1e-3, k_zonal, Atmosphere_vtk_zonal_File);
 
     dump_zonal("CO2", co2, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
+    // per-species background mass fractions
+    for (int n = 0; n < 6; n++) {
+        Atmosphere_vtk_zonal_File << "SCALARS q_" << AtmMixture::BG_NAMES()[n] << " float " << 1 << "\n";
+        Atmosphere_vtk_zonal_File << "LOOKUP_TABLE default" << "\n";
+        const double f_n = m_comp.f_bg[n];
+        for(int i = 0; i < im; i++){
+            for(int j = 0; j < jm; j++){
+                double q_v, q_c, q_b;
+                const double q_l = cloud.x[i][j][k_zonal] + ice.x[i][j][k_zonal] + gr.x[i][j][k_zonal];
+                AtmMixture::split(c.x[i][j][k_zonal], co2.x[i][j][k_zonal], q_v, q_c, q_b, q_l);
+                Atmosphere_vtk_zonal_File << safe_val(q_b * f_n) << "\n";
+            }
+        }
+    }
 
     if(turb_model != "laminar"){
         dump_zonal("TKE",          tke,        1.0, k_zonal, Atmosphere_vtk_zonal_File);
@@ -961,6 +989,20 @@ void cAtmosphereModel::paraview_vtk_longal(string &Name_Bathymetry_File,
 //    dump_longal("TempDewPoint", TempDewPoint, 1.0, j_longal, Atmosphere_vtk_longal_File);
 
     dump_longal("CO2", co2, 1.0, j_longal, Atmosphere_vtk_longal_File);
+    // per-species background mass fractions
+    for (int n = 0; n < 6; n++) {
+        Atmosphere_vtk_longal_File << "SCALARS q_" << AtmMixture::BG_NAMES()[n] << " float " << 1 << "\n";
+        Atmosphere_vtk_longal_File << "LOOKUP_TABLE default" << "\n";
+        const double f_n = m_comp.f_bg[n];
+        for(int i = 0; i < im; i++){
+            for(int k = 0; k < km; k++){
+                double q_v, q_c, q_b;
+                const double q_l = cloud.x[i][j_longal][k] + ice.x[i][j_longal][k] + gr.x[i][j_longal][k];
+                AtmMixture::split(c.x[i][j_longal][k], co2.x[i][j_longal][k], q_v, q_c, q_b, q_l);
+                Atmosphere_vtk_longal_File << safe_val(q_b * f_n) << "\n";
+            }
+        }
+    }
     dump_longal("height", aux_t, 1e-3, j_longal, Atmosphere_vtk_longal_File);
 
     if(turb_model != "laminar"){

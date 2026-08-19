@@ -404,6 +404,60 @@ cdef class Atmosphere:
             self._check_alive()
             self._thisptr.kappa_bg = <double> value
     
+    property kappa_N2:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.kappa_N2
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.kappa_N2 = <double> value
+    
+    property kappa_CH4:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.kappa_CH4
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.kappa_CH4 = <double> value
+    
+    property kappa_NH3:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.kappa_NH3
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.kappa_NH3 = <double> value
+    
+    property kappa_H2:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.kappa_H2
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.kappa_H2 = <double> value
+    
+    property kappa_CO:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.kappa_CO
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.kappa_CO = <double> value
+    
+    property kappa_SO2:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.kappa_SO2
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.kappa_SO2 = <double> value
+    
     property geothermal_flux:
         def __get__(Atmosphere self):
             self._check_alive()

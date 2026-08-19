@@ -131,6 +131,17 @@ void cAtmosphereModel::LoadConfig(const char *filename){
 // Resolve the configured mole fractions into the mass fractions, molar masses and gas
 // constants the physics actually uses, and report them. Called once, at the end of
 // LoadConfig, so every later consumer sees a populated m_comp.
+// The background opacity the radiation should use: the composition-weighted per-species value
+// by default, or the single lumped kappa_bg when ATM_BG_LUMPED=1. One accessor so the radiation
+// and the diagnostics cannot disagree about which is in force.
+double cAtmosphereModel::kappaBackground() const {
+    static const bool lumped = [](){
+        const char* e = getenv("ATM_BG_LUMPED"); return e && atoi(e) != 0; }();
+    return lumped ? kappa_bg : m_kappa_bg_eff;
+}
+/*
+*
+*/
 void cAtmosphereModel::initComposition(){
 
     m_comp = AtmMixture::resolve(x_H2O, x_CO2, x_N2, x_CH4,
@@ -140,6 +151,12 @@ void cAtmosphereModel::initComposition(){
     // fraction that co2_0 is quoted at. Set here, once, and NOT inside resolve(): see the
     // note at carrierRef() for what happened when it lived there.
     AtmMixture::carrierRef() = 1.0 - c_0;
+
+    // Composition-weighted background opacity. One number, because the six background gases
+    // are in fixed proportion.
+    const double kap[6] = { kappa_N2, kappa_CH4, kappa_NH3, kappa_H2, kappa_CO, kappa_SO2 };
+    m_kappa_bg_eff = 0.0;
+    for (int i = 0; i < 6; i++) m_kappa_bg_eff += m_comp.f_bg[i] * kap[i];
 
     cout << endl << endl << "      AGCM: atmospheric composition (ATHAD)" << endl << endl;
     cout.precision(6);

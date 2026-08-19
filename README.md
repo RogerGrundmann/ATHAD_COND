@@ -19,6 +19,35 @@ ground to ~177 km and *nothing condenses*; here water is subcritical everywhere 
 condensation is live from the sea surface up, so the code paths ATHAD spent seventeen
 defect-fixes making inert are the ones this model depends on.
 
+## The background opacity, split per species — and here it is exactly a no-op
+
+Ported from ATHAD (its README item 60), where `kappa_bg` = 1e-6 m2/kg — the value of a
+radiatively inert diatomic — was being applied to a background containing NH3 and CH4 at
+1.4 mole-% each, and splitting it raised the effective background opacity **1867x**.
+
+**AT THIS FORK'S COMPOSITION THE SAME SPLIT CHANGES NOTHING, AND THAT IS WHY IT IS WORTH
+HAVING.** The background here is pure N2 — `x_CH4` through `x_SO2` are all zero, because the
+epoch this models is oxidised and degassed — so `sum(f_i*kappa_i)` = `kappa_N2` = 1e-6 and the
+lumped value was right all along. Printed every diagnostic:
+
+| species | fraction of bg | kappa [m2/kg] | share of kappa_bg_eff |
+|---|---|---|---|
+| **N2** | **1.0000** | 1.000e-06 | **100.0 %** |
+| CH4, NH3, H2, CO, SO2 | 0.0000 | — | 0.0 % |
+| **TOTAL** | 1.0000 | **1.000e-06** | **ratio to lumped: 1x** |
+
+Verified: OLR at iteration 20 is **275.29 W/m2 in both arms**, identical, as a no-op must be.
+
+**The point is that it was right by luck rather than by construction, and nothing in the code
+said which.** The same constant is exact here and 1867x too small in the sibling; before the
+split, the only way to know was to work out the composition by hand. The `param.py` comment
+already anticipates trace gases being "added later" — with the split in place, adding one gets
+its own opacity instead of silently inheriting nitrogen's.
+
+`q_N2 … q_SO2` are written to all three VTK slices here as well, computed on the fly from
+`AtmMixture::split` (five of them identically zero). `ATM_BG_LUMPED=1` forces the single
+`kappa_bg`, which at this composition is the same number either way.
+
 ## The sweep count: p_dyn's amplitude and Psi are DECOUPLED, and the 28 % was the initial projection
 
 **The first version of this section attributed a 28 % drop in `Psi_max` to the time-loop solve.

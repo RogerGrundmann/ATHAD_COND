@@ -64,6 +64,12 @@ namespace AtmMixture {
     // pseudo-species, because ATHAD transports only H2O and CO2; the rest stay well
     // mixed and can be represented by their aggregate molar mass and heat capacity.
     // ------------------------------------------------------------------------
+    // Names of the six background gases, in the order f_bg[] uses.
+    inline const char* const* BG_NAMES() {
+        static const char* n[6] = {"N2", "CH4", "NH3", "H2", "CO", "SO2"};
+        return n;
+    }
+
     struct Composition {
         double M_mean   = 0.0;   // mean molar mass of the full mixture   [kg/mol]
         double R_mix    = 0.0;   // gas constant of the full mixture      [J/(kg K)]
@@ -74,6 +80,12 @@ namespace AtmMixture {
 
         double M_bg     = 0.0;   // background pseudo-species             [kg/mol]
         double R_bg     = 0.0;   //                                       [J/(kg K)]
+
+        // The six background gases, as mass fractions OF THE BACKGROUND (they sum to 1).
+        // Fixed: all six are well mixed and source-free, so their ratios never change and any
+        // per-species quantity is this constant times the local q_bg. At this fork's shipped
+        // composition only N2 is non-zero. Order is N2, CH4, NH3, H2, CO, SO2 — see BG_NAMES.
+        double f_bg[6]  = {0,0,0,0,0,0};
 
         bool   valid    = false; // mole fractions summed to 1
         double x_sum    = 0.0;
@@ -161,6 +173,16 @@ namespace AtmMixture {
         const double x_bg = x_N2 + x_CH4 + x_NH3 + x_H2 + x_CO + x_SO2;
         C.M_bg = (x_bg > 0.0) ? (m_bg / x_bg) : M_N2;
         C.R_bg = R_STAR / C.M_bg;
+
+        // Per-species split of the background, by MASS within the background.
+        if (m_bg > 0.0) {
+            C.f_bg[0] = x_N2  * M_N2  / m_bg;
+            C.f_bg[1] = x_CH4 * M_CH4 / m_bg;
+            C.f_bg[2] = x_NH3 * M_NH3 / m_bg;
+            C.f_bg[3] = x_H2  * M_H2  / m_bg;
+            C.f_bg[4] = x_CO  * M_CO  / m_bg;
+            C.f_bg[5] = x_SO2 * M_SO2 / m_bg;
+        }
 
         // NOTE: carrierRef() is deliberately NOT set here. See its declaration above — it is
         // set once by cAtmosphereModel::initComposition() from c_0, because resolve() is a

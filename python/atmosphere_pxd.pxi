@@ -45,6 +45,12 @@ cdef extern from "cAtmosphereModel.h":
         double kappa_H2O
         double kappa_CO2
         double kappa_bg
+        double kappa_N2
+        double kappa_CH4
+        double kappa_NH3
+        double kappa_H2
+        double kappa_CO
+        double kappa_SO2
         double geothermal_flux
         double rayleigh_kf
         double drag_n_layers

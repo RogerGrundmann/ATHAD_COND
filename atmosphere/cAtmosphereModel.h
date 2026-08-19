@@ -78,6 +78,15 @@ public:
     AtmMixture::Composition m_comp;
     void initComposition();
 
+    // Composition-weighted grey longwave opacity of the background, sum(f_bg[i]*kappa_i), set
+    // by initComposition(). The six background gases are well mixed and source-free, so their
+    // mass ratios are fixed and the per-species split collapses to this ONE number. At this
+    // fork's composition the background is pure N2, so it equals kappa_N2 = 1e-6 — the same
+    // value the lumped kappa_bg carried, which in ATHAD was 1867x too small. Right here, wrong
+    // there, and only the split says which. ATM_BG_LUMPED=1 forces kappa_bg.
+    double m_kappa_bg_eff = 0.0;
+    double kappaBackground() const;
+
     // COSMO barometric lapse parameter, derived in initComposition() as
     // cosmo_lapse_fraction * R_mix * t_surf_equator / cp_l. Earth's hard-coded 42 K is
     // meaningless at ATHAD's R and T — see param.py, cosmo_lapse_fraction.

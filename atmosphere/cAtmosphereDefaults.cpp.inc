@@ -40,6 +40,12 @@ void cAtmosphereModel::SetDefaultConfig() {
   kappa_H2O = 0.01;
   kappa_CO2 = 0.001;
   kappa_bg = 1e-06;
+  kappa_N2 = 1e-06;
+  kappa_CH4 = 0.003;
+  kappa_NH3 = 0.01;
+  kappa_H2 = 1e-05;
+  kappa_CO = 0.0001;
+  kappa_SO2 = 0.002;
   geothermal_flux = 150.0;
   rayleigh_kf = 1.1574074074074073e-05;
   drag_n_layers = 5.0;

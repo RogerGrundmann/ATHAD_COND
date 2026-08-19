@@ -224,7 +224,30 @@ def main():
             # of ~280-310 W/m2, NOT at sigma*T_surf^4.
             ('kappa_H2O', 'ATHAD: grey longwave mass absorption of water vapour in m2/kg', 'double', 0.01),
             ('kappa_CO2', 'ATHAD: grey longwave mass absorption of CO2 in m2/kg', 'double', 0.001),
-            ('kappa_bg', 'ATHAD: grey longwave mass absorption of the background gases in m2/kg', 'double', 1.0e-6),
+            ('kappa_bg', 'ATHAD: grey longwave mass absorption of the background gases in m2/kg; LUMPED fallback, used only when ATM_BG_LUMPED=1', 'double', 1.0e-6),
+
+            # PER-SPECIES BACKGROUND OPACITIES (ported from ATHAD, its README item 60).
+            #
+            # AT THIS FORK'S COMPOSITION THIS CHANGES NOTHING, AND THAT IS THE POINT OF HAVING
+            # IT. ATHAD applied kappa_bg = 1e-6 -- the value of a radiatively inert diatomic --
+            # to a background containing NH3 and CH4 at 1.4 mole-% each, and the split raised
+            # its effective opacity 1867x. Here the background is PURE N2 (x_CH4..x_SO2 are all
+            # zero: the epoch is oxidised and degassed, see the composition block below), so
+            # sum(f_i*kappa_i) = kappa_N2 = 1e-6 and the lumped value was right all along.
+            #
+            # It was right by luck, though, not by construction, and that is the difference the
+            # split records: the same constant that was 1867x wrong in the sibling is exact
+            # here, and nothing in the code said which. The composition comment already
+            # anticipates trace gases being "added later" -- with the split in place, adding one
+            # gets its own opacity instead of silently inheriting nitrogen's.
+            #
+            # Values and their basis are ATHAD's, unchanged, so the two trees cannot drift.
+            ('kappa_N2',  'ATHAD_COND: grey longwave mass absorption of N2 in m2/kg',  'double', 1.0e-6),
+            ('kappa_CH4', 'ATHAD_COND: grey longwave mass absorption of CH4 in m2/kg', 'double', 3.0e-3),
+            ('kappa_NH3', 'ATHAD_COND: grey longwave mass absorption of NH3 in m2/kg', 'double', 1.0e-2),
+            ('kappa_H2',  'ATHAD_COND: grey longwave mass absorption of H2 in m2/kg',  'double', 1.0e-5),
+            ('kappa_CO',  'ATHAD_COND: grey longwave mass absorption of CO in m2/kg',  'double', 1.0e-4),
+            ('kappa_SO2', 'ATHAD_COND: grey longwave mass absorption of SO2 in m2/kg', 'double', 2.0e-3),
 
             # ATHAD: geothermal / magma-ocean heat flux through the base of the atmosphere
             # in W/m2. A quenching magma ocean radiates far more than the modern Earth's

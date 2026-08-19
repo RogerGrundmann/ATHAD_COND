@@ -161,7 +161,10 @@ public:
                 // see README, and the OLR check below, which is what tests them.
                 const double kappa_H2O = m.kappa_H2O;                 // [m2/kg]
                 const double kappa_CO2 = m.kappa_CO2;                 // [m2/kg]
-                const double kappa_bg  = m.kappa_bg;                  // [m2/kg]
+                // COMPOSITION-WEIGHTED, not the lumped constant. Equal to kappa_N2 here,
+                // because this fork's background IS nitrogen; the sibling's is not, and the
+                // same lumped 1e-6 was 1867x too small there. See param.py.
+                const double kappa_bg  = m.kappaBackground();         // [m2/kg]
                 constexpr double p_ref = 1.0e5;                       // [Pa] 1 bar broadening reference
                 const double inv_g     = 1.0 / m.g;
 

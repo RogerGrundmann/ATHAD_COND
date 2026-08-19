@@ -41,6 +41,12 @@
     Config::FillDoubleWithElement(elem_common, "kappa_H2O", kappa_H2O);
     Config::FillDoubleWithElement(elem_common, "kappa_CO2", kappa_CO2);
     Config::FillDoubleWithElement(elem_common, "kappa_bg", kappa_bg);
+    Config::FillDoubleWithElement(elem_common, "kappa_N2", kappa_N2);
+    Config::FillDoubleWithElement(elem_common, "kappa_CH4", kappa_CH4);
+    Config::FillDoubleWithElement(elem_common, "kappa_NH3", kappa_NH3);
+    Config::FillDoubleWithElement(elem_common, "kappa_H2", kappa_H2);
+    Config::FillDoubleWithElement(elem_common, "kappa_CO", kappa_CO);
+    Config::FillDoubleWithElement(elem_common, "kappa_SO2", kappa_SO2);
     Config::FillDoubleWithElement(elem_common, "geothermal_flux", geothermal_flux);
     Config::FillDoubleWithElement(elem_common, "rayleigh_kf", rayleigh_kf);
     Config::FillDoubleWithElement(elem_common, "drag_n_layers", drag_n_layers);
