@@ -57,3 +57,11 @@ Reaction_Papers/
 
 # per-run working directories for A/B checks (see README)
 python/run_*/
+
+# Per-run working directories. The output_*/ patterns above catch the model's own
+# convention (output_<name>/), but a run driven from its own directory puts the VTK and
+# restart files wherever its config says — python/run_foo/out/ does not match output_*.
+# One `git add -A` swept 296 million insertions and two 621 MB restart dumps into a commit
+# because of that gap; caught before the push, but only just.
+python/run*/
+run_*/
