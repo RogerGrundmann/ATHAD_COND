@@ -253,11 +253,16 @@ threading defect (ATURAN `ffd0e0e`); report failures and limits in the README (A
   (`H2O CO2 N2 CH4 NH3 H2 CO SO2`), all mass fractions from `AtmMixture::split()`, so what is
   plotted is what is integrated; the raw transported CO2 array is `CO2_tracer`. **Unverified in
   this fork — no COND run has been made against the renamed writers.**
-- **`ATM_MC_GEOPOTENTIAL` is ported here and UNMEASURED** (ATHAD item 61). It adds the missing
-  `g·z` to `s`, `s_u`, `s_d`. In ATHAD it did NOT restore updraft condensation, because the
-  updraft there is one grid level deep — cloud base and LFS on adjacent levels, so the recurrence
-  never executes. **Measure the base/LFS separation here before expecting the `c_u` this fork
-  lost in item 53 to return.**
+- **`ATM_MC_GEOPOTENTIAL` PAYS HERE — measured 2026-08-20, and it is the first updraft
+  condensation in either fork.** `max c_u` 0 → **7.19e-04 g/kg/s at 24 854 m**, with `max s_u`
+  moving from the cloud base (661 m) to the top of the column (24 854 m). The reason it works here
+  and not in ATHAD is geometry: this fork's convective column is **20 km deep** (base 1786–2200 m,
+  LFS 20.5–28.1 km, 47 % of columns convecting) because its triggers have been fractions of surface
+  pressure since the fork was cut, while ATHAD's updraft is one grid level deep and has no ascent
+  for the geopotential to act on. Nothing integrated moves — OLR, photosphere, Ψ and the water
+  column are identical — which is the albedo wall, not a null result about the physics.
+  **`max M_u` is pinned at `M_max` = 3.0 kg/(m²s)**: size that Earth constant before quoting
+  anything from this scheme.
 - **The 40-iteration OLR is reproducible to only ~0.5 % across a thread-count change in ATHAD**
   (item 61), and this fork shares the convective trigger set that amplifies it. Ψ, albedo and the
   photosphere are unmoved at 1e-6. **State the thread count with any OLR number**, and treat COND's

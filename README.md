@@ -533,6 +533,36 @@ over the 1 bar reference". Both describe ATHAD; here it is 60 bar. The code is r
 
 ## Remaining work
 
+- **`ATM_MC_GEOPOTENTIAL` PAYS HERE, AND IT IS THE FIRST UPDRAFT CONDENSATION IN EITHER FORK**
+  (2026-08-20, ATHAD README item 63). Item 53 predicted that adding `g·z` to the static energy
+  would let the rising parcel cool and condense; ATHAD tried it and got nothing, because its
+  updraft is one grid level deep. This fork's is **20 km deep** — cloud base 1786–2200 m at the
+  sea, LFS 20 517–28 130 m, 5218 of 11041 cells in the zonal slice convecting — because the
+  convective triggers here have been fractions of surface pressure since the fork was cut.
+
+  **MEASURED, 40 iterations, ONE binary, env-only A/B (`run_alb006` vs `run_gz_cond`):**
+
+  | | off | on |
+  |---|---|---|
+  | **`max c_u`** | **0.000000 g/kg/s** | **7.19e-04 @ 24 854 m, 37°S** |
+  | `max s_u`, and where | 2.5460 at **661 m** | 2.9111 at **24 854 m** |
+  | `max MC_t` | 1.030e-03 K/s | 1.175e-03 (+14 %) |
+  | `max q_c_u` | 7.0537 g/kg at 1017 m | 7.1392 at 1785 m |
+  | OLR / photosphere / `Psi_max` / precipitable water | 273.70 / 65.9 km / 40515.96 / 160626.497 | **all identical** |
+
+  The condensation appears **25 km up**, which is where a parcel cooling at `g/cp_l` = 4.81 K/km
+  for 23 km first saturates, and `max s_u` moves from the cloud base to the top of the column —
+  the same statement read off the other field, since with the geopotential in, static energy is
+  largest where `g·z` is. **Nothing integrated moves**: the albedo wall again, as with every
+  microphysics correction since item 51.
+
+  **Still open, and now the loudest thing in this scheme: `max M_u` is 3.0000 kg/(m²s), PINNED at
+  `M_max`.** Half the convective mass flux in this model is a cap, not a result — and `M_max` = 3.0
+  is another Earth constant ("~10× any realistic value" on a 1 bar planet). Size it before reading
+  anything quantitative off the convection here. That is the third time a cap has turned out to be
+  standing where a measurement should be (`MCt_max` in item 53, `cc_factor`'s reference in the same
+  item, this one now).
+
 - **The startup energy-balance check was reading 62 % of the insolation, and its albedo was a
   literal** (ATHAD README item 62, repaired in both trees 2026-08-20). `cAtmosphereModel.cpp`
   took the planetary mean of the insolation parabola as `0.5·(equator + pole)` = 149.0 W/m²,
