@@ -479,7 +479,7 @@ void cAtmosphereModel::paraview_vtk_radial(string &Name_Bathymetry_File,
     dump_radial("Epsilon", epsilon, 1.0, i_radial, Atmosphere_vtk_radial_File);
     dump_radial("TauAbove", tau_above, 1.0, i_radial, Atmosphere_vtk_radial_File);
     dump_radial("TauLayer", tau_layer, 1.0, i_radial, Atmosphere_vtk_radial_File);
-    dump_radial("N2", N2, 1.0, i_radial, Atmosphere_vtk_radial_File);
+    dump_radial("BruntVaisala_N2", brunt_N2, 1.0, i_radial, Atmosphere_vtk_radial_File);
     dump_radial("PsiMerid", Psi, 1.0, i_radial, Atmosphere_vtk_radial_File);
     dump_radial("Ubud_pgf", ubud_pgf, 1.0, i_radial, Atmosphere_vtk_radial_File);
     dump_radial("Ubud_cor", ubud_cor, 1.0, i_radial, Atmosphere_vtk_radial_File);
@@ -544,21 +544,32 @@ void cAtmosphereModel::paraview_vtk_radial(string &Name_Bathymetry_File,
 //    dump_radial("Q_Latent", Q_Latent, 1e-3, i_radial, Atmosphere_vtk_radial_File);
 //    dump_radial("Q_Sensible", Q_Sensible, 1e-3, i_radial, Atmosphere_vtk_radial_File);
 
-    dump_radial("CO2", co2, 1.0, i_radial, Atmosphere_vtk_radial_File);
-    // per-species background mass fractions
-    for (int n = 0; n < 6; n++) {
-        Atmosphere_vtk_radial_File << "SCALARS q_" << AtmMixture::BG_NAMES()[n] << " float " << 1 << "\n";
+    // ==================== THE EIGHT SPECIES, ALL FROM split() ====================
+    // One source for all eight: AtmMixture::split, the routine the thermodynamics and the
+    // radiation use, so a plotted mass fraction cannot drift from the integrated one.
+    //   H2O  = q_v, the vapour;
+    //   CO2  = q_c, the CARRIER-RENORMALISED CO2 — NOT the raw co2 array, which is the
+    //          transported tracer and carries no dilution. That one is written separately
+    //          below as CO2_tracer.
+    //   rest = q_b*f_bg[n], the per-species background (ATHAD item 60).
+    // All are MASS FRACTIONS, dimensionless, so the eight are directly comparable. The older
+    // WaterVapour field above is the same water in g/kg, read from the raw c array.
+    for (int n = 0; n < 8; n++) {
+        Atmosphere_vtk_radial_File << "SCALARS " << AtmMixture::SPECIES_NAMES()[n] << " float " << 1 << "\n";
         Atmosphere_vtk_radial_File << "LOOKUP_TABLE default" << "\n";
-        const double f_n = m_comp.f_bg[n];
+        const double f_n = (n >= 2) ? m_comp.f_bg[n-2] : 0.0;
         for(int j = 0; j < jm; j++){
             for(int k = 0; k < km; k++){
                 double q_v, q_c, q_b;
                 const double q_l = cloud.x[i_radial][j][k] + ice.x[i_radial][j][k] + gr.x[i_radial][j][k];
                 AtmMixture::split(c.x[i_radial][j][k], co2.x[i_radial][j][k], q_v, q_c, q_b, q_l);
-                Atmosphere_vtk_radial_File << safe_val(q_b * f_n) << "\n";
+                const double q_n = (n == 0) ? q_v : (n == 1) ? q_c : q_b * f_n;
+                Atmosphere_vtk_radial_File << safe_val(q_n) << "\n";
             }
         }
     }
+    // The transported tracer itself, undiluted: the array rhs_co2 advances.
+    dump_radial("CO2_tracer", co2, 1.0, i_radial, Atmosphere_vtk_radial_File);
 
     if(turb_model != "laminar"){
         dump_radial("TKE",        tke,        1.0, i_radial, Atmosphere_vtk_radial_File);
@@ -730,7 +741,7 @@ void cAtmosphereModel::paraview_vtk_zonal(string &Name_Bathymetry_File,
     dump_zonal("Epsilon", epsilon, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
     dump_zonal("TauAbove", tau_above, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
     dump_zonal("TauLayer", tau_layer, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
-    dump_zonal("N2", N2, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
+    dump_zonal("BruntVaisala_N2", brunt_N2, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
     dump_zonal("PsiMerid", Psi, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
     dump_zonal("Ubud_pgf", ubud_pgf, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
     dump_zonal("Ubud_cor", ubud_cor, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
@@ -779,21 +790,32 @@ void cAtmosphereModel::paraview_vtk_zonal(string &Name_Bathymetry_File,
 //    dump_zonal("Q_Latent", Q_Latent, 1e-3, k_zonal, Atmosphere_vtk_zonal_File);
 //    dump_zonal("Q_Sensible", Q_Sensible, 1e-3, k_zonal, Atmosphere_vtk_zonal_File);
 
-    dump_zonal("CO2", co2, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
-    // per-species background mass fractions
-    for (int n = 0; n < 6; n++) {
-        Atmosphere_vtk_zonal_File << "SCALARS q_" << AtmMixture::BG_NAMES()[n] << " float " << 1 << "\n";
+    // ==================== THE EIGHT SPECIES, ALL FROM split() ====================
+    // One source for all eight: AtmMixture::split, the routine the thermodynamics and the
+    // radiation use, so a plotted mass fraction cannot drift from the integrated one.
+    //   H2O  = q_v, the vapour;
+    //   CO2  = q_c, the CARRIER-RENORMALISED CO2 — NOT the raw co2 array, which is the
+    //          transported tracer and carries no dilution. That one is written separately
+    //          below as CO2_tracer.
+    //   rest = q_b*f_bg[n], the per-species background (ATHAD item 60).
+    // All are MASS FRACTIONS, dimensionless, so the eight are directly comparable. The older
+    // WaterVapour field above is the same water in g/kg, read from the raw c array.
+    for (int n = 0; n < 8; n++) {
+        Atmosphere_vtk_zonal_File << "SCALARS " << AtmMixture::SPECIES_NAMES()[n] << " float " << 1 << "\n";
         Atmosphere_vtk_zonal_File << "LOOKUP_TABLE default" << "\n";
-        const double f_n = m_comp.f_bg[n];
+        const double f_n = (n >= 2) ? m_comp.f_bg[n-2] : 0.0;
         for(int i = 0; i < im; i++){
             for(int j = 0; j < jm; j++){
                 double q_v, q_c, q_b;
                 const double q_l = cloud.x[i][j][k_zonal] + ice.x[i][j][k_zonal] + gr.x[i][j][k_zonal];
                 AtmMixture::split(c.x[i][j][k_zonal], co2.x[i][j][k_zonal], q_v, q_c, q_b, q_l);
-                Atmosphere_vtk_zonal_File << safe_val(q_b * f_n) << "\n";
+                const double q_n = (n == 0) ? q_v : (n == 1) ? q_c : q_b * f_n;
+                Atmosphere_vtk_zonal_File << safe_val(q_n) << "\n";
             }
         }
     }
+    // The transported tracer itself, undiluted: the array rhs_co2 advances.
+    dump_zonal("CO2_tracer", co2, 1.0, k_zonal, Atmosphere_vtk_zonal_File);
 
     if(turb_model != "laminar"){
         dump_zonal("TKE",          tke,        1.0, k_zonal, Atmosphere_vtk_zonal_File);
@@ -940,7 +962,7 @@ void cAtmosphereModel::paraview_vtk_longal(string &Name_Bathymetry_File,
     dump_longal("Epsilon", epsilon, 1.0, j_longal, Atmosphere_vtk_longal_File);
     dump_longal("TauAbove", tau_above, 1.0, j_longal, Atmosphere_vtk_longal_File);
     dump_longal("TauLayer", tau_layer, 1.0, j_longal, Atmosphere_vtk_longal_File);
-    dump_longal("N2", N2, 1.0, j_longal, Atmosphere_vtk_longal_File);
+    dump_longal("BruntVaisala_N2", brunt_N2, 1.0, j_longal, Atmosphere_vtk_longal_File);
     dump_longal("PsiMerid", Psi, 1.0, j_longal, Atmosphere_vtk_longal_File);
     dump_longal("Ubud_pgf", ubud_pgf, 1.0, j_longal, Atmosphere_vtk_longal_File);
     dump_longal("Ubud_cor", ubud_cor, 1.0, j_longal, Atmosphere_vtk_longal_File);
@@ -988,21 +1010,32 @@ void cAtmosphereModel::paraview_vtk_longal(string &Name_Bathymetry_File,
 //    dump_longal("TempStandard", TempStand, 1.0, j_longal, Atmosphere_vtk_longal_File);
 //    dump_longal("TempDewPoint", TempDewPoint, 1.0, j_longal, Atmosphere_vtk_longal_File);
 
-    dump_longal("CO2", co2, 1.0, j_longal, Atmosphere_vtk_longal_File);
-    // per-species background mass fractions
-    for (int n = 0; n < 6; n++) {
-        Atmosphere_vtk_longal_File << "SCALARS q_" << AtmMixture::BG_NAMES()[n] << " float " << 1 << "\n";
+    // ==================== THE EIGHT SPECIES, ALL FROM split() ====================
+    // One source for all eight: AtmMixture::split, the routine the thermodynamics and the
+    // radiation use, so a plotted mass fraction cannot drift from the integrated one.
+    //   H2O  = q_v, the vapour;
+    //   CO2  = q_c, the CARRIER-RENORMALISED CO2 — NOT the raw co2 array, which is the
+    //          transported tracer and carries no dilution. That one is written separately
+    //          below as CO2_tracer.
+    //   rest = q_b*f_bg[n], the per-species background (ATHAD item 60).
+    // All are MASS FRACTIONS, dimensionless, so the eight are directly comparable. The older
+    // WaterVapour field above is the same water in g/kg, read from the raw c array.
+    for (int n = 0; n < 8; n++) {
+        Atmosphere_vtk_longal_File << "SCALARS " << AtmMixture::SPECIES_NAMES()[n] << " float " << 1 << "\n";
         Atmosphere_vtk_longal_File << "LOOKUP_TABLE default" << "\n";
-        const double f_n = m_comp.f_bg[n];
+        const double f_n = (n >= 2) ? m_comp.f_bg[n-2] : 0.0;
         for(int i = 0; i < im; i++){
             for(int k = 0; k < km; k++){
                 double q_v, q_c, q_b;
                 const double q_l = cloud.x[i][j_longal][k] + ice.x[i][j_longal][k] + gr.x[i][j_longal][k];
                 AtmMixture::split(c.x[i][j_longal][k], co2.x[i][j_longal][k], q_v, q_c, q_b, q_l);
-                Atmosphere_vtk_longal_File << safe_val(q_b * f_n) << "\n";
+                const double q_n = (n == 0) ? q_v : (n == 1) ? q_c : q_b * f_n;
+                Atmosphere_vtk_longal_File << safe_val(q_n) << "\n";
             }
         }
     }
+    // The transported tracer itself, undiluted: the array rhs_co2 advances.
+    dump_longal("CO2_tracer", co2, 1.0, j_longal, Atmosphere_vtk_longal_File);
     dump_longal("height", aux_t, 1e-3, j_longal, Atmosphere_vtk_longal_File);
 
     if(turb_model != "laminar"){

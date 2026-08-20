@@ -70,6 +70,15 @@ namespace AtmMixture {
         return n;
     }
 
+    // All eight species in one order: the two prognostic ones (water vapour, CO2) followed by
+    // the six background species in BG_NAMES order. The ParaView writers use this so the
+    // plotted composition is ONE list from ONE source (split), rather than the three naming
+    // conventions it grew. Ported from ATHAD (README item 61).
+    inline const char* const* SPECIES_NAMES() {
+        static const char* n[8] = {"H2O", "CO2", "N2", "CH4", "NH3", "H2", "CO", "SO2"};
+        return n;
+    }
+
     struct Composition {
         double M_mean   = 0.0;   // mean molar mass of the full mixture   [kg/mol]
         double R_mix    = 0.0;   // gas constant of the full mixture      [J/(kg K)]
@@ -95,12 +104,13 @@ namespace AtmMixture {
     // THE NON-WATER CARRIER AND ITS DILUTION (ported from ATHAD, its README items 57 and 59).
     //
     // WORSE HERE THAN THERE, because of what this fork is. ATHAD_COND is the post-condensation
-    // atmosphere: CO2 is 62.33 % of the mass and water only 34.64 %, and the water field spans
-    // 20.1 to 339.0 g/kg — a 16.8x range against ATHAD's 1.4x. With the old split, which read
-    // co2 straight from the field and gave the BACKGROUND every change in the water:
+    // atmosphere: CO2 is 54.78 % of the mass and water only 36.16 % (62.33 / 34.64 before the
+    // trace gases were restored on 2026-08-20), and the water field spans 20.1 to 339.0 g/kg —
+    // a 16.8x range against ATHAD's 1.4x. With the old split, which read co2 straight from the
+    // field and gave the BACKGROUND every change in the water:
     //
-    //     at the sea surface (q_v = 0.339)  q_CO2 = 0.6233 (pinned)   q_bg = 0.0377
-    //     aloft              (q_v = 0.020)  q_CO2 = 0.6233 (pinned)   q_bg = 0.3566
+    //     at the sea surface (q_v = 0.339)  q_CO2 = 0.5478 (pinned)   q_bg = 0.1132
+    //     aloft              (q_v = 0.020)  q_CO2 = 0.5478 (pinned)   q_bg = 0.4322
     //
     // The background — 3 % of this atmosphere at the reference — was being handed 0.31 of the
     // mass aloft, a 9.5x swing, all of it stolen from CO2. R_mix aloft comes out 240.1 where
@@ -118,7 +128,7 @@ namespace AtmMixture {
     // is the one function that knows the configured composition, so it looked like the natural
     // home. But resolve() is a pure function that any caller may invoke with any composition,
     // and cond_column_selftest.cpp calls it with a near-dry one — which left carrierRef() at
-    // 0.9957 instead of 0.6536 and moved M_nonwater from 42.88 to 36.27 g/mol. A global written
+    // 0.9957 instead of 1 - c_0 and moved M_nonwater by a quarter. A global written
     // by whoever called last is not a reference. The test caught it on the first run.
     inline double& carrierRef() { static double v = 0.0; return v; }
 

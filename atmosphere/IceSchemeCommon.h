@@ -133,7 +133,7 @@ namespace IceSchemeCommon {
             // Item 57: with the carrier renormalised, q_v + q_CO2 + q_bg == 1 - q_cond for ANY
             // q_v — the carrier shrinks as water grows — so the old c <= 1 - co2 ceiling has no
             // meaning under that convention and 1.0 is the real bound on a mass fraction. It
-            // mattered more here than in ATHAD: with co2 pinned at 0.6233 the ceiling sat at
+            // mattered more here than in ATHAD: with co2 pinned at 0.5478 the ceiling sat at
             // 0.3767, only 9 % above the sea-surface water content.
             const double c_max  = AtmMixture::co2_dilute()
                                 ? 1.0 : std::max(0.0, 1.0 - m.co2.x[i][j][k]);

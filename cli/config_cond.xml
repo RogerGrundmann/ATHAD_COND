@@ -23,7 +23,7 @@
         <cosmo_lapse_fraction>1.0</cosmo_lapse_fraction>  <!-- ATHAD: near-surface lapse rate as a fraction of the dry adiabat; 1.0 = dry adiabat(double) -->
         <t_skin>254.0</t_skin>  <!-- ATHAD: starting radiative-equilibrium temperature of the optically thin top, in K(double) -->
         <t_skin_relax>0.25</t_skin_relax>  <!-- ATHAD: relaxation of the t_skin fixed point per radiation call; 0 = hold t_skin fixed(double) -->
-        <r_air>40.8</r_air>  <!-- ATHAD_COND: reference density of the atmospheric mixture at the sea surface in kg/m³(double) -->
+        <r_air>39.08</r_air>  <!-- ATHAD_COND: reference density of the atmospheric mixture at the sea surface in kg/m³(double) -->
         <r_0_water>997.0</r_0_water>  <!-- reference density of fresh water in kg/m3(double) -->
         <t_equat_modern>15.4</t_equat_modern>  <!-- mean temperature of the modern earth in °C(double) -->
         <rad_equator_short>298.0</rad_equator_short>  <!-- ATHAD: TOA short wave insolation at the equator in W/m2(double) -->
@@ -83,23 +83,23 @@
         <pr_turb>0.9</pr_turb>  <!-- turbulent Prandtl number for temperature transport in turbulent flows(double) -->
         <abl_height>10000.0</abl_height>  <!-- ATHAD: physical depth of the atmospheric boundary layer in m(double) -->
         <x_H2O>0.5578</x_H2O>  <!-- ATHAD_COND: mole fraction of H2O at the sea surface (saturated: p_sat(T_surf)/p_0)(double) -->
-        <x_CO2>0.4109</x_CO2>  <!-- ATHAD_COND: mole fraction of CO2 at the sea surface(double) -->
-        <x_N2>0.0313</x_N2>  <!-- ATHAD_COND: mole fraction of N2 at the sea surface(double) -->
-        <x_CH4>0.0</x_CH4>  <!-- ATHAD_COND: mole fraction of CH4(double) -->
-        <x_NH3>0.0</x_NH3>  <!-- ATHAD_COND: mole fraction of NH3(double) -->
-        <x_H2>0.0</x_H2>  <!-- ATHAD_COND: mole fraction of H2(double) -->
-        <x_CO>0.0</x_CO>  <!-- ATHAD_COND: mole fraction of CO(double) -->
-        <x_SO2>0.0</x_SO2>  <!-- ATHAD_COND: mole fraction of SO2(double) -->
-        <ep>0.6431</ep>  <!-- ATHAD_COND: ratio of the background-mixture to water-vapour gas constants(double) -->
+        <x_CO2>0.3459</x_CO2>  <!-- ATHAD_COND: mole fraction of CO2 at the sea surface (dry ratio, after the traces take 7 %)(double) -->
+        <x_N2>0.0263</x_N2>  <!-- ATHAD_COND: mole fraction of N2 at the sea surface (dry ratio, after the traces take 7 %)(double) -->
+        <x_CH4>0.014</x_CH4>  <!-- ATHAD_COND: mole fraction of CH4(double) -->
+        <x_NH3>0.014</x_NH3>  <!-- ATHAD_COND: mole fraction of NH3(double) -->
+        <x_H2>0.014</x_H2>  <!-- ATHAD_COND: mole fraction of H2(double) -->
+        <x_CO>0.014</x_CO>  <!-- ATHAD_COND: mole fraction of CO(double) -->
+        <x_SO2>0.014</x_SO2>  <!-- ATHAD_COND: mole fraction of SO2(double) -->
+        <ep>0.6893</ep>  <!-- ATHAD_COND: ratio of the background-mixture to water-vapour gas constants(double) -->
         <hp>6.1078</hp>  <!-- water vapour pressure at T = 0°C: E = 6.1 hPa(double) -->
-        <R_Air>296.8</R_Air>  <!-- ATHAD_COND: specific gas constant of the non-condensable background in J/(kg*K)(double) -->
+        <R_Air>318.1</R_Air>  <!-- ATHAD_COND: specific gas constant of the non-condensable background in J/(kg*K)(double) -->
         <R_WaterVapour>461.5</R_WaterVapour>  <!-- specific gas constant of water vapour in J/(kg*K)(double) -->
         <r_water_vapour>0.0094</r_water_vapour>  <!-- density of saturated water vapour in kg/m³ at 10°C(double) -->
         <R_co2>188.9</R_co2>  <!-- specific gas constant of CO2 in J/(kg*K)(double) -->
         <lv>2520000.0</lv>  <!-- specific latent evaporation heat(condensation heat) in J/kg(double) -->
         <ls>2830000.0</ls>  <!-- specific latent vaporisation heat(sublimation heat) in J/kg(double) -->
-        <cp_l>1349.0</cp_l>  <!-- ATHAD_COND: specific heat capacity of the mixture at constant pressure in J/(kg K)(double) -->
-        <cv_l>1062.4</cv_l>  <!-- ATHAD_COND: specific heat capacity of the mixture at constant volume in J/(kg K)(double) -->
+        <cp_l>1372.6</cp_l>  <!-- ATHAD_COND: specific heat capacity of the mixture at constant pressure in J/(kg K)(double) -->
+        <cv_l>1073.4</cv_l>  <!-- ATHAD_COND: specific heat capacity of the mixture at constant volume in J/(kg K)(double) -->
         <lamda>0.0262</lamda>  <!-- heat transfer coefficient of air in W/(m K)(double) -->
         <r_co2>0.0019767</r_co2>  <!-- density of CO2 in kg/m³ at 25°C(double) -->
         <gam>0.0065</gam>  <!-- constant slope of temperature    gam = 6.5 K/1000 m(double) -->
@@ -109,9 +109,9 @@
         <t_00>236.15</t_00>  <!-- temperature in K compare to -37°C(double) -->
         <t_000>253.15</t_000>  <!-- temperature in K compare to -20°C(double) -->
         <s_0>274515.75</s_0>  <!-- entropy at 0°C, cp_l * t_0 in J/kg(double) -->
-        <c_0>0.3464</c_0>  <!-- ATHAD_COND: reference water vapour mass fraction at the sea surface in kg/kg(double) -->
-        <c_h2o_dry_top>0.00423</c_h2o_dry_top>  <!-- ATHAD_COND: water vapour mass fraction above the cold trap in kg/kg(double) -->
-        <co2_0>0.6233</co2_0>  <!-- ATHAD_COND: reference CO2 mass fraction at the sea surface in kg/kg(double) -->
+        <c_0>0.3616</c_0>  <!-- ATHAD_COND: reference water vapour mass fraction at the sea surface in kg/kg(double) -->
+        <c_h2o_dry_top>0.00452</c_h2o_dry_top>  <!-- ATHAD_COND: water vapour mass fraction above the cold trap in kg/kg(double) -->
+        <co2_0>0.5478</co2_0>  <!-- ATHAD_COND: reference CO2 mass fraction at the sea surface in kg/kg(double) -->
         <co2_scale>1.0</co2_scale>  <!-- multiplier applied to the whole CO2 field for sensitivity experiments (1.0 = field as built; 2.0 = doubled CO2)(double) -->
         <c_ocean>70</c_ocean>  <!-- ATHAD: surface water vapour as a fraction of the saturation value, in %(double) -->
     </atmosphere>

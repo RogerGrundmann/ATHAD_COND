@@ -278,7 +278,7 @@ public:
                 // It is made consistent rather than left as found: it used the scalar config
                 // ep = R_Air/R_v, and R_Air here is the background EXCLUDING CO2 (N2,
                 // 28.014 g/mol). The "other" gas in a saturation formula is everything that is
-                // not water — CO2 and the background, M_nonwater = 42.888 g/mol at this sea
+                // not water — CO2 and the background, M_nonwater = 40.118 g/mol at this sea
                 // surface. The scalar therefore stands in 0.6431 for a true 0.4201, which is
                 // the 29 % error test/cond_column_selftest.cpp:158-165 describes. That test
                 // asserts against a value it computes itself, so it never covered this code;
@@ -898,7 +898,7 @@ public:
     // InitValues_Atm.cpp with the other initialisers. Its (1 - c)*f_CO2 distribution was
     // RIGHT and is preserved exactly — AtmMixture::q_CO2_of now produces it from a uniform
     // stored field, continuously rather than once, so it can no longer go stale when the
-    // water field evolves. co2_0/(1 - c_0) = 0.9536 = f_CO2, so the two are the same field
+    // water field evolves. co2_0/(1 - c_0) = 0.8581 = f_CO2, so the two are the same field
     // at t = 0. See initCO2 for the full argument.
     // ------------------------------------------------------------------
 
@@ -1748,7 +1748,7 @@ public:
                         const int iu = (i < m.im - 1) ? i + 1 : i;
                         const double dz = m.get_layer_height(iu) - m.get_layer_height(il);
                         const double th = theta[i];
-                        m.N2.x[i][j][k] = (dz > 0.0 && th > 0.0)
+                        m.brunt_N2.x[i][j][k] = (dz > 0.0 && th > 0.0)
                                         ? (m.g / th) * (theta[iu] - theta[il]) / dz : 0.0;
                     }
                 }

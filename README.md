@@ -196,23 +196,40 @@ with a 240 °C sea holds water at its own vapour pressure: `p_sat(513.15 K) = 33
 a 60 bar column, so `x_H₂O = 0.5578` at the surface — fifty-five times the dry figure. Both
 are true, at different heights, and the column runs between them.
 
+**Since 2026-08-20 the five trace gases carry ATHAD's mole fractions** — CH₄, NH₃, H₂, CO
+and SO₂ at 0.014 each — where they used to be zero. `x_H₂O` is fixed by the sea and cannot
+give way, so they displace CO₂ and N₂ within the 44.22 % that is not water; above the cold
+trap they are **15.7 % of the dry atmosphere and CO₂ falls to 77.4 %, below the quoted
+89–95 %**. That is a deliberate departure from the stated composition. Note also that
+matching ATHAD's *fractions* does not match its *amounts*: 1.4 % of ATHAD's 250 bar is
+3.5 bar per gas, 1.4 % of this 60 bar column is 0.84 bar, so the same numbers imply four
+fifths of each trace gas left with the water.
+
 | | at the sea | above the cold trap |
 |---|---|---|
-| x = (H₂O, CO₂, N₂) | .5578 / .4109 / .0313 | .010 / .920 / .070 |
-| M_mean [g/mol] | 29.01 | 42.63 |
-| R_mix [J/(kg·K)] | 286.6 | 195.0 |
-| cp [J/(kg·K)] | 1349 | 1028 † |
+| x = (H₂O, CO₂, N₂) | .5578 / .3459 / .0263 | .010 / .7744 / .0589 |
+| x(CH₄, NH₃, H₂, CO, SO₂) | .014 each | .0313 each |
+| M_mean [g/mol] | 27.79 | 39.90 |
+| R_mix [J/(kg·K)] | 299.2 | 208.4 |
+| cp [J/(kg·K)] | 1372.6 | 1042.5 † |
 
-† **The 1028 is the dry composition at the SEA-SURFACE temperature**, not at the cold
-trap. `cp_of(dry, 513.15 K)` = 1028.1; at cold-trap conditions it is **856.8** (the
+† **The 1042.5 is the dry composition at the SEA-SURFACE temperature**, not at the cold
+trap. `cp_of(dry, 513.15 K)` = 1042.5; at cold-trap conditions it is **886.4** (the
 Shomate fits clamp below 298 K). This table warns two paragraphs above that the stated
 composition and the stated temperature describe different heights — and then does it
-itself, for this one entry. The 1349 is sound: it is `cp_of` at the sea, and it is what
+itself, for this one entry. The 1372.6 is sound: it is `cp_of` at the sea, and it is what
 `cp_l` is set to.
 
-| q_H₂O [kg/kg] | 0.3464 | 0.00423 |
-| ρ [kg/m³] | 40.80 | — |
-| scale height | 15.0 km | 10.2 km |
+| q_H₂O [kg/kg] | 0.3616 | 0.00452 |
+| ρ [kg/m³] | 39.08 | — |
+| scale height | 15.7 km | 10.9 km |
+
+The background is no longer N₂ alone: M_bg = 26.138 g/mol, **R_bg = 318.10 J/(kg·K)**
+(was 296.8), within 0.3 % of ATHAD's 317.26 because in both forks the traces are ~71 % of
+the background by mass. `M_nonwater` at the sea is **40.12 g/mol** (was 42.88). And the
+background's grey opacity Σf_i·κ_i goes **1e-6 → 1.944e-3 m²/kg**, so item 60's per-species
+split — an exact no-op at the old composition — now carries NH₃ (48.7 %), SO₂ (36.7 %) and
+CH₄ (13.8 %).
 
 Water boils at 548.7 K at 60 bar, so the sea is 35 K below boiling. (At the 27 bar end of
 the stated range water boils at 501.2 K, so a 503 K surface there has **no liquid ocean at
@@ -511,6 +528,100 @@ over the 1 bar reference". Both describe ATHAD; here it is 60 bar. The code is r
 `latentSensibleHeat`'s sea-surface humidity (per-cell `M_nonwater`).
 
 ## Remaining work
+
+- **THE FIVE TRACE GASES ARE IN, AT ATHAD'S MOLE FRACTIONS** (2026-08-20). CH₄, NH₃, H₂, CO
+  and SO₂ carry 0.014 each here now, where they were zero and documented as "gone: the epoch
+  is oxidised and degassed". **Every number in this file measured before this date was measured
+  on the old composition.** What changed and why it is not a free parameter swap:
+
+  | | without traces | with traces |
+  |---|---|---|
+  | x(H₂O) / x(CO₂) / x(N₂) at the sea | 0.5578 / 0.4109 / 0.0313 | **0.5578** / 0.3459 / 0.0263 |
+  | M_mean [g/mol] | 29.009 | 27.789 |
+  | R_mix [J/(kg·K)] | 286.61 | 299.20 |
+  | M_bg / R_bg | 28.014 / 296.80 | 26.138 / **318.10** |
+  | q_H₂O / q_CO₂ at the sea | 0.3464 / 0.6233 | 0.3616 / 0.5478 |
+  | ρ_surf [kg/m³] | 40.80 | 39.08 |
+  | cp at the sea [J/(kg·K)] | 1349.2 | 1372.6 |
+  | M_nonwater [g/mol] | 42.888 | 40.118 |
+  | scale height | 15.0 km | 15.7 km |
+  | dry / saturated lapse [K/km] | 7.27 / 5.04 | 7.15 / 4.84 |
+  | Σf_i·κ_i (background opacity) | 1.000e-06 | **1.944e-03 (1944×)** |
+
+  **`x_H₂O` does not move, and that is the whole shape of the change.** It is
+  `p_sat(513.15 K)/p_0` — set by the sea, not by the mixture — so the 7 % the traces take comes
+  out of CO₂ and N₂, which keep their dry 0.920:0.070 ratio inside what is left. The surface is
+  still saturated afterwards (`q_sat` = 0.361635 against `q_H₂O` = 0.361611), which is this
+  fork's defining condition and the self-test's first real check.
+
+  **TWO COSTS, BOTH STATED IN `param.py` RATHER THAN BURIED:**
+  1. **Above the cold trap the traces are 15.7 % of the dry atmosphere and CO₂ falls to 77.4 %,
+     below the quoted 89–95 % band.** The stated composition for this epoch does not have room
+     for ATHAD's trace inventory; adopting it is a departure from that composition, not a
+     refinement of it.
+  2. **The fractions match ATHAD, the amounts do not.** 1.4 mole-% of ATHAD's 250 bar column is
+     3.5 bar of each gas; 1.4 % of this 60 bar column is 0.84 bar. Matching the numbers assumes
+     four fifths of each trace gas left with the water. Matching the *amounts* instead would put
+     them at ~5.8 mole-% each, 29 % of the column — a different atmosphere again, and the open
+     question if what was wanted was one inventory across the two epochs.
+
+  **THE PER-SPECIES OPACITY SPLIT WAS WRITTEN FOR EXACTLY THIS AND IT PAID.** Item 60's port
+  was recorded here as "a verified no-op at this composition" — true while the background was
+  pure N₂, and it stopped being true the moment the composition changed. `Σf_i·κ_i` is now
+  1.944e-03 m²/kg, **1944× the lumped `kappa_bg` = 1e-6**, with NH₃ 48.7 %, SO₂ 36.7 % and CH₄
+  13.8 % while N₂ — still 29 % of the background by mass — contributes 0.02 %. Under the lumped
+  constant the model would have run five new absorbers at nitrogen's opacity and printed nothing
+  to say so. *A no-op guard is worth keeping precisely because it is a no-op until it isn't.*
+
+  **MEASURED, 40 iterations, 24 threads, ONE binary, config-only A/B** (`run_traces40` against
+  `run_notraces40`, so nothing but the composition differs — see ATHAD item 61 for why the
+  binary and the thread count have to be held fixed):
+
+  | | without traces | with traces | |
+  |---|---|---|---|
+  | OLR | 275.36 W/m² | 273.70 | −0.60 % |
+  | photosphere (τ=1) | 62.5 km, 268.23 K | **65.9 km**, 267.29 K | **+3.4 km** |
+  | emission from the isothermal skin | 41.4 % of columns | **58.6 %** | +17.2 points |
+  | max τ_above (surface) | 2.520e6 | 2.696e6 | +7.0 % |
+  | mean planetary albedo | 0.5000 | 0.5000 | 0 |
+  | `Psi_max` | 40927.25 | 40515.96 | −1.0 % |
+  | max water vapour | 338.66 g/kg | 354.74 | +4.7 % |
+  | max cloud water | 46.86 g/kg (6373 m) | 49.08 (7023 m) | +4.7 %, deck +650 m |
+  | precipitable water | 153 564 mm | 160 626 mm | +4.6 % |
+  | evaporation (Dalton) | 4426 mm/a | **6329 mm/a** | **+43 %** |
+  | max surface T | 239.05 °C | 239.19 °C | +0.13 K |
+
+  **Read the water column, not the OLR.** The OLR moves 0.60 %, which is the same size as the
+  ~0.5 % ATHAD item 61 measured for a 40-iteration OLR across a bare thread-count change, and
+  this fork emits **58.6 % of its columns from the isothermal skin**, so its OLR is `t_skin`
+  restated even more directly than ATHAD's. What is well clear of any noise floor is the
+  structure: the photosphere climbs 3.4 km, the cloud deck 650 m and the water column 4.6 %,
+  all of them following the +4.4 % scale height that a lighter mixture (M_mean 29.01 → 27.79)
+  buys. The **+43 % evaporation** is the largest single response and comes from the sea-surface
+  saturation mass fraction rising 0.3464 → 0.3616 against an unchanged surface temperature —
+  the same water, in a mixture that holds more of it per kilogram.
+
+  **The six κ are now assumptions of the same standing as `kappa_CO2` and `kappa_H2O`**, and a
+  grey scheme cannot represent the window regions that would decide them. `ATM_BG_LUMPED=1`
+  restores the single `kappa_bg` and, with it, every pre-2026-08-20 background opacity.
+
+- **The eight species have one name each now, and the `N2` collision is gone** (ported from
+  ATHAD README item 61, 2026-08-20). The VTK files carried `N2` for the **Brunt-Vaisala
+  frequency squared** and `q_N2` for **nitrogen**, in the same file; the array is now
+  `brunt_N2` and the field `BruntVaisala_N2`. All eight species are written as bare names —
+  `H2O CO2 N2 CH4 NH3 H2 CO SO2` — as mass fractions from `AtmMixture::split()`, the routine
+  the thermodynamics and the radiation use, so what is plotted is what is integrated. The raw
+  transported CO2 array is still written, as `CO2_tracer`; the two answer different questions
+  (`CO2` is what the physics reads, `CO2_tracer` is what the transport equation advances).
+  **Unverified in this fork** — the change is textual and was checked in ATHAD, but no COND run
+  has been made against it.
+- **`ATM_MC_GEOPOTENTIAL` is ported and UNMEASURED here** (ATHAD item 61). It adds the missing
+  `g·z` to `s`, `s_u`, `s_d`, so a rising parcel cools on the dry adiabat instead of carrying
+  its cloud-base temperature upward. Default off. **In ATHAD it did not restore `c_u`, and the
+  reason was geometry**: the updraft there is one grid level deep — cloud base and LFS on
+  adjacent levels, so the recurrence loop `for(i = i_base+1; i <= i_LFS-1)` never executes.
+  **Check the base/LFS separation here BEFORE expecting the `c_u` this fork lost in item 53 to
+  come back**, because if it is one level here too, the geopotential cannot be the fix.
 
 - **The OLR is not independent of `t_skin`** (item 6). This is the first thing to fix and
   it is the same task as ATHAD's invariant 3: the temperature profile is prescribed, so

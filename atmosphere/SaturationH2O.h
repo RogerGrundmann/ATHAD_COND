@@ -188,7 +188,7 @@ namespace SaturationH2O {
     // for the mole fraction x gives
     //     x = q*M_other / ( M_H2O*(1-q) + q*M_other )
     // and e = x*p. It reduces to the dilute e = q*p/ep when q << 1 and stays correct when
-    // it does not — at q = 0.3464 (ATHAD_COND's sea surface) the dilute form is low by
+    // it does not — at q = 0.3616 (ATHAD_COND's sea surface) the dilute form is low by
     // 1150 hPa out of 33470, which reads as a saturation deficit at a surface that is
     // saturated by construction. See README, "What the surface state still breaks".
     inline double vapourPressureFromMassFraction(double q, double p, double M_other)
