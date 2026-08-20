@@ -224,16 +224,47 @@ void cAtmosphereModel::initComposition(){
     // sigma*T_skin^4, which says nothing except that the arithmetic is consistent.
     //
     // This is a one-shot estimate, not an iterated fixed point: the albedo it uses is the
-    // clear-sky (molten-surface) value, whereas the cloud deck that forms above the
-    // condensation level will raise it and lower the true balance. Closing that loop
-    // properly means iterating t_skin against the model's own albedo. Stated in the README.
+    // clear-sky SURFACE value, whereas the cloud deck that forms above the condensation
+    // level will raise it and lower the true balance. Closing that loop properly means
+    // iterating t_skin against the model's own albedo, which updateSkinTemperature() does
+    // from the first radiation call onward; this is only what can be said before it.
+    //
+    // TWO DEFECTS REPAIRED HERE 2026-08-20, both inside four lines of a printout:
+    //
+    //  (1) THE MEAN WAS THE AVERAGE OF THE TWO ENDPOINTS. short_wave_radiation[] is a
+    //      parabola in latitude, P(phi) = pole + (equator - pole)*(1 - (2*phi/pi)^2), and
+    //      the planetary mean of a flux is its COS(LATITUDE)-WEIGHTED mean, not the mean of
+    //      its endpoints. That weighting integrates in closed form:
+    //
+    //          int_0^(pi/2) (1 - (2*phi/pi)^2) cos(phi) dphi / int_0^(pi/2) cos(phi) dphi
+    //              = 8/pi^2 = 0.810569
+    //
+    //      so the mean is equator*(8/pi^2) + pole*(1 - 8/pi^2). At 298/0 that is 241.55
+    //      W/m2 = S/4 for S = 0.71*1361, which is precisely what param.py says the pair was
+    //      FITTED to deliver. The endpoint average gave 149.0, i.e. 61.7 % of it, so this
+    //      line lit the planet with three fifths of the model's own insolation and printed
+    //      287.08 W/m2 / 266.75 K where the honest figures are 372.23 W/m2 / 284.64 K.
+    //      planetaryShortWave() has always weighted correctly, so nothing but this estimate
+    //      was affected — but this estimate is what judges the configured t_skin, and it
+    //      was 17.9 K out.
+    //
+    //  (2) THE ALBEDO WAS A BARE 0.08 COMMENTED "molten surface". It duplicated
+    //      albedo_surface, the config parameter that exists for exactly this, and it was
+    //      inherited unchanged into ATHAD_COND, whose surface is a 240 C OCEAN rather than
+    //      a silicate melt. param.py's own complaint about albedo_pole/albedo_equator being
+    //      "configuration theatre" applies in reverse: a literal beside a parameter of the
+    //      same meaning is a second source of truth, and it is the one nobody edits.
     {
-        const double sw_mean = 0.5 * (rad_equator_short + rad_pole_short);   // [W/m2] TOA mean
-        const double alb_clear = 0.08;                                       // molten surface, clear sky
-        const double absorbed  = (1.0 - alb_clear) * sw_mean + geothermal_flux;
+        // 8/pi^2 — the cos(latitude) weight of the insolation parabola. See above.
+        constexpr double w_cos = 0.8105694691387022;
+        const double sw_mean   = w_cos * rad_equator_short + (1.0 - w_cos) * rad_pole_short;
+        const double absorbed  = (1.0 - albedo_surface) * sw_mean + geothermal_flux;
         const double t_skin_eq = std::pow(absorbed / sigma, 0.25);
 
-        cout << "        absorbed SW + geothermal ......... = " << absorbed << " W/m2" << endl;
+        cout << "        TOA insolation (cos-weighted) .... = " << sw_mean << " W/m2"
+             << "   (equator " << rad_equator_short << ", pole " << rad_pole_short << ")" << endl;
+        cout << "        absorbed SW + geothermal ......... = " << absorbed << " W/m2"
+             << "   (clear-sky surface albedo " << albedo_surface << ")" << endl;
         cout << "        implied skin temperature ......... = " << t_skin_eq << " K"
              << "   (configured t_skin = " << t_skin << " K)" << endl;
         if(std::fabs(t_skin_eq - t_skin) > 5.0)

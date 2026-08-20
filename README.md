@@ -19,30 +19,34 @@ ground to ~177 km and *nothing condenses*; here water is subcritical everywhere 
 condensation is live from the sea surface up, so the code paths ATHAD spent seventeen
 defect-fixes making inert are the ones this model depends on.
 
-## The background opacity, split per species — and here it is exactly a no-op
+## The background opacity, split per species — a no-op that stopped being one
 
 Ported from ATHAD (its README item 60), where `kappa_bg` = 1e-6 m2/kg — the value of a
 radiatively inert diatomic — was being applied to a background containing NH3 and CH4 at
 1.4 mole-% each, and splitting it raised the effective background opacity **1867x**.
 
-**AT THIS FORK'S COMPOSITION THE SAME SPLIT CHANGES NOTHING, AND THAT IS WHY IT IS WORTH
-HAVING.** The background here is pure N2 — `x_CH4` through `x_SO2` are all zero, because the
-epoch this models is oxidised and degassed — so `sum(f_i*kappa_i)` = `kappa_N2` = 1e-6 and the
-lumped value was right all along. Printed every diagnostic:
+**AT THIS FORK'S COMPOSITION IT CHANGED NOTHING — UNTIL 2026-08-20, WHEN THE COMPOSITION
+CHANGED.** The background here was pure N2, `x_CH4` through `x_SO2` all zero, so
+`sum(f_i*kappa_i)` = `kappa_N2` = 1e-6 and the lumped value was exact: OLR at iteration 20 was
+**275.29 W/m2 in both arms**, identical, as a no-op must be. Then the five trace gases were
+given ATHAD's mole fractions (see *Remaining work*), and the same code produced:
 
 | species | fraction of bg | kappa [m2/kg] | share of kappa_bg_eff |
 |---|---|---|---|
-| **N2** | **1.0000** | 1.000e-06 | **100.0 %** |
-| CH4, NH3, H2, CO, SO2 | 0.0000 | — | 0.0 % |
-| **TOTAL** | 1.0000 | **1.000e-06** | **ratio to lumped: 1x** |
+| N2 | 0.2927 | 1.000e-06 | 0.0 % |
+| CH4 | 0.0892 | 3.000e-03 | 13.8 % |
+| **NH3** | 0.0947 | 1.000e-02 | **48.7 %** |
+| H2 | 0.0112 | 1.000e-05 | 0.0 % |
+| CO | 0.1558 | 1.000e-04 | 0.8 % |
+| **SO2** | 0.3563 | 2.000e-03 | **36.7 %** |
+| **TOTAL** | 1.0000 | **1.944e-03** | **1944x the lumped value** |
 
-Verified: OLR at iteration 20 is **275.29 W/m2 in both arms**, identical, as a no-op must be.
-
-**The point is that it was right by luck rather than by construction, and nothing in the code
-said which.** The same constant is exact here and 1867x too small in the sibling; before the
-split, the only way to know was to work out the composition by hand. The `param.py` comment
-already anticipates trace gases being "added later" — with the split in place, adding one gets
-its own opacity instead of silently inheriting nitrogen's.
+**That is the whole case for the split, made twice over.** It was right by luck rather than by
+construction while the background was nitrogen, and nothing in the code said which; the same
+constant was exact here and 1867x too small in the sibling. Under the lumped `kappa_bg` the
+composition change would have run five new absorbers at nitrogen's opacity and printed nothing
+to say so. `ATM_BG_LUMPED=1` restores the single value and every background opacity that
+predates the composition change.
 
 `q_N2 … q_SO2` are written to all three VTK slices here as well, computed on the fly from
 `AtmMixture::split` (five of them identically zero). `ATM_BG_LUMPED=1` forces the single
@@ -528,6 +532,20 @@ over the 1 bar reference". Both describe ATHAD; here it is 60 bar. The code is r
 `latentSensibleHeat`'s sea-surface humidity (per-cell `M_nonwater`).
 
 ## Remaining work
+
+- **The startup energy-balance check was reading 62 % of the insolation, and its albedo was a
+  literal** (ATHAD README item 62, repaired in both trees 2026-08-20). `cAtmosphereModel.cpp`
+  took the planetary mean of the insolation parabola as `0.5·(equator + pole)` = 149.0 W/m²,
+  where the cos(latitude)-weighted mean is `equator·8/π² + pole·(1 − 8/π²)` = **241.55 W/m²**,
+  and it used a bare `0.08` commented *"molten surface"* instead of `albedo_surface`. The
+  printed estimate goes 287.08 → **372.23 W/m²** and 266.75 → **284.64 K**, so the gap it
+  reports against the configured `t_skin` = 254 K goes 12.75 → 30.64 K. **Diagnostic only** —
+  `planetaryShortWave()` always weighted correctly, so no result moves.
+  **What is still open here is the albedo itself**: `albedo_surface` = 0.08 is justified in
+  `param.py` by *"a quenching silicate melt is dark, measured basaltic-melt albedos are
+  0.05–0.10"*, which is ATHAD's magma ocean. **This fork's surface is a 240 °C sea.** The value
+  may be near-right by coincidence (water is ~0.06–0.10) but its stated basis does not apply,
+  and by this project's own standard that is a defect, not a rounding.
 
 - **THE FIVE TRACE GASES ARE IN, AT ATHAD'S MOLE FRACTIONS** (2026-08-20). CH₄, NH₃, H₂, CO
   and SO₂ carry 0.014 each here now, where they were zero and documented as "gone: the epoch
