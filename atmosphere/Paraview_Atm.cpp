@@ -541,8 +541,8 @@ void cAtmosphereModel::paraview_vtk_radial(string &Name_Bathymetry_File,
 //    dump_radial("LorentzForce", LorentzForce, 1e9, i_radial, Atmosphere_vtk_radial_File);
 //    dump_radial("Q_Radiation", radiation, 1.0, i_radial, Atmosphere_vtk_radial_File);
 
-//    dump_radial("Q_Latent", Q_Latent, 1e-3, i_radial, Atmosphere_vtk_radial_File);
-//    dump_radial("Q_Sensible", Q_Sensible, 1e-3, i_radial, Atmosphere_vtk_radial_File);
+    dump_radial("Q_Latent", Q_Latent, 1e-3, i_radial, Atmosphere_vtk_radial_File);
+    dump_radial("Q_Sensible", Q_Sensible, 1e-3, i_radial, Atmosphere_vtk_radial_File);
 
     // ==================== THE EIGHT SPECIES, ALL FROM split() ====================
     // One source for all eight: AtmMixture::split, the routine the thermodynamics and the
@@ -1004,8 +1004,8 @@ void cAtmosphereModel::paraview_vtk_longal(string &Name_Bathymetry_File,
     dump_longal("CentrifugalForce", CentrifugalForce, 1.0, j_longal, Atmosphere_vtk_longal_File);
     dump_longal("PresGradForce", PresGradForce, 1.0, j_longal, Atmosphere_vtk_longal_File);
 
-//    dump_longal("Q_Latent", Q_Latent, 1e-3, j_longal, Atmosphere_vtk_longal_File);
-//    dump_longal("Q_Sensible", Q_Sensible, 1e-3, j_longal, Atmosphere_vtk_longal_File);
+    dump_longal("Q_Latent", Q_Latent, 1e-3, j_longal, Atmosphere_vtk_longal_File);
+    dump_longal("Q_Sensible", Q_Sensible, 1e-3, j_longal, Atmosphere_vtk_longal_File);
 //    dump_longal("Q_Radiation", radiation, 1.0, j_longal, Atmosphere_vtk_longal_File);
 //    dump_longal("TempStandard", TempStand, 1.0, j_longal, Atmosphere_vtk_longal_File);
 //    dump_longal("TempDewPoint", TempDewPoint, 1.0, j_longal, Atmosphere_vtk_longal_File);

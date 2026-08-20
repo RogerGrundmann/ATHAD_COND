@@ -75,28 +75,32 @@ public:
         // absorbed shortwave -> extra (polar-amplified) warming that the dynamics cannot mix
         // away (unlike a forcing/nudge). Constants are tunable. NOTE the cloud SW bump below
         // overwrites this per column where cloud is present, so its net reach is cloud-limited.
-        // ATHAD: the surface is a magma ocean, and there is no ice-albedo feedback.
+        // ATHAD_COND: the surface is a LIQUID WATER SEA at 503-513 K, and there is still no
+        // ice-albedo feedback — the sea is 240 K above freezing, so the inherited ramp
+        // toward snow/sea-ice through 275 -> 265 K remains dead code, exactly as it was in
+        // ATHAD for the opposite reason (1200 K above the thresholds rather than 240).
         //
-        // What was here: an ocean/land base albedo with a ramp toward snow/sea-ice as the
-        // surface cooled through 275 -> 265 K. None of it applies. There is no land, no
-        // snow, and at 1500 K nothing within 1200 K of the ice thresholds — the ramp was
-        // dead code that always returned the ice-free ocean value.
+        // THE VALUE IS WATER'S SINCE 2026-08-20, AND IT WAS THE MAGMA OCEAN'S BEFORE THAT.
+        // `albedo_surface` carried 0.08 with the justification "a quenching silicate melt is
+        // dark, measured basaltic-melt albedos are 0.05-0.10" — ATHAD's surface, inherited
+        // unchanged into a model whose surface is a sea. It is now 0.06, a water value. See
+        // param.py for the derivation and for why the low-latitude weighting is the right
+        // one on a zero-obliquity planet.
         //
-        // A quenching silicate melt is dark: measured basaltic-melt albedos are ~0.05-0.10.
         // This is the CLEAR-SKY value only; the cloud bump below raises it wherever the
-        // model actually produces condensate. That separation is the point of this fix —
-        // the reflective cloud deck a runaway greenhouse is supposed to have must be EARNED
-        // by condensate the model generated, not asserted as a constant albedo. Asserting
-        // 0.4 while the column condenses nothing was the inconsistency being removed.
+        // model actually produces condensate — which in THIS fork is essentially everywhere,
+        // so the number's reach is small and measured rather than assumed. That separation
+        // is the point: a reflective deck must be EARNED by condensate the model generated,
+        // not asserted as a constant albedo.
         //
-        // Now a PARAMETER (albedo_surface), not a literal. It was written here as a
+        // It is a PARAMETER (albedo_surface), not a literal. It was written here as a
         // constexpr while the config carried an inert albedo_pole/albedo_equator pair that
         // nothing read — so the file said one thing and the configuration said another.
-        const double alb_surface_molten = m.albedo_surface;   // dark silicate melt, clear sky
+        const double alb_surface_clear = m.albedo_surface;    // clear-sky sea surface
         #pragma omp parallel for schedule(static)
         for (int j = 0; j < m.jm; j++)
             for (int k = 0; k < m.km; k++)
-                m.albedo.y[j][k] = alb_surface_molten;
+                m.albedo.y[j][k] = alb_surface_clear;
 
         // Incoming short-wave radiation: pole -> equator parabola, hemispherically symmetric.
         m.short_wave_radiation = std::vector<double>(m.jm, m.rad_pole_short);

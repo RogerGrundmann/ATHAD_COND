@@ -197,13 +197,6 @@ def main():
             ('rad_equator_short', 'ATHAD: TOA short wave insolation at the equator in W/m2', 'double', 298.0),
             ('rad_pole_short', 'ATHAD: TOA short wave insolation at the poles in W/m2', 'double', 0.0),
 
-            # These two are the LONGWAVE boundary values of the inherited scheme. They are
-            # present-day Earth fluxes and have no Hadean meaning; mode 2 computes the
-            # longwave from the optical depth instead, so they survive only where the old
-            # code still reads them.
-            ('rad_equator', 'inherited Earth longwave boundary value in W/m2 (unused in radiation_mode 2)', 'double', 398.2),
-            ('rad_pole', 'inherited Earth longwave boundary value in W/m2 (unused in radiation_mode 2)', 'double', 360.0),
-
             ('sigma', 'Stefan-Boltzmann constant W/(m²*K4)', 'double', 5.670280e-8),
 
             # ==================================================================
@@ -480,9 +473,22 @@ def main():
             # were INERT — MultiLayerRadiation built its own albedo from bare literals and
             # never read them, so the pole/equator pair was configuration theatre.
             #
-            # albedo_surface: a quenching silicate melt is dark. Measured basaltic-melt
-            # albedos are 0.05-0.10. There is no land, no snow and no sea ice, so this is a
-            # single global clear-sky value, not Earth's latitude parabola.
+            # albedo_surface: THE SURFACE HERE IS A 240 C SEA, NOT ATHAD'S MAGMA OCEAN, and
+            # this number was 0.08 with a basaltic-melt justification attached to it until
+            # 2026-08-20 -- an inherited constant carrying the parent's conditions, which is
+            # the defect pattern this fork was forked to expose. 0.06 is a water surface:
+            # a calm sea is 0.03-0.06 broadband at small zenith angle, and the global mean
+            # rises toward 0.06-0.08 once high-latitude incidence and whitecaps are included.
+            # 0.06 is the low-latitude-weighted choice, which is the right weighting because
+            # a zero-obliquity planet puts 81 % of its insolation (8/pi^2) inside the tropics
+            # and subtropics. There is no land, no snow and no sea ice -- the sea is 240 K
+            # above freezing -- so this is a single global clear-sky value, not Earth's
+            # latitude parabola, and MultiLayerRadiation's ice-albedo ramp stays dead code.
+            #
+            # It is also nearly unreachable: the cloud bump below overwrites it wherever
+            # condensate exists, and in this fork that is everywhere (mean planetary albedo
+            # 0.5000 to four decimals). Expect it to move the OLR by very little; measured
+            # rather than assumed -- see README.
             #
             # albedo_cloud: the SW albedo of an optically thick cloud top, composited over
             # the surface value by refl = tau/(tau+2) on the condensate path. IT IS
@@ -492,7 +498,7 @@ def main():
             # therefore the second-biggest lever after the opacities, and it is an
             # ASSUMPTION: 0.50 is a thick terrestrial water cloud. A deep, cold, slowly
             # sedimenting Hadean deck could plausibly be brighter.
-            ('albedo_surface', 'ATHAD: clear-sky albedo of the molten silicate surface', 'double', 0.08),
+            ('albedo_surface', 'ATHAD_COND: clear-sky albedo of the liquid water sea surface', 'double', 0.06),
             ('albedo_cloud', 'ATHAD: shortwave albedo of an optically thick cloud top', 'double', 0.50),
 
             ('epsilon_equator', 'emissivity and absorptivity caused by other gases than water vapour/(by Häckel)', 'double', 0.48),

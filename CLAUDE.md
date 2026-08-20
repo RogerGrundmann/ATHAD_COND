@@ -149,6 +149,7 @@ is what ATHAD does and is only equivalent when the water field is uniform too.
 | `t_surf_equator` / `t_surf_pole` | 513.15 / 503.15 K | **Prescribed, not solved** |
 | `t_skin` | fixed-point iterate | Currently *sets* the OLR rather than following it |
 | `albedo_cloud` | 0.50 | IS the planetary albedo (0.4997 measured); saturates wherever condensate exists, which is now everywhere |
+| `albedo_surface` | **0.06** | A **water** value since 2026-08-20; it was 0.08 with ATHAD's basaltic-melt justification attached. Clear-sky only, and the cloud bump overwrites it almost everywhere, so its reach is small — measured, not assumed |
 | `omega` | 3.17e-4 (5.5 h day) | Inherited; this epoch is later and slower |
 | `delta_i_c` | 500 s | Bechtold convective timescale, Earth-calibrated. A time, not a pressure — no unit error, and no evidence here to replace it |
 

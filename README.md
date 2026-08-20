@@ -541,11 +541,42 @@ over the 1 bar reference". Both describe ATHAD; here it is 60 bar. The code is r
   printed estimate goes 287.08 → **372.23 W/m²** and 266.75 → **284.64 K**, so the gap it
   reports against the configured `t_skin` = 254 K goes 12.75 → 30.64 K. **Diagnostic only** —
   `planetaryShortWave()` always weighted correctly, so no result moves.
-  **What is still open here is the albedo itself**: `albedo_surface` = 0.08 is justified in
-  `param.py` by *"a quenching silicate melt is dark, measured basaltic-melt albedos are
-  0.05–0.10"*, which is ATHAD's magma ocean. **This fork's surface is a 240 °C sea.** The value
-  may be near-right by coincidence (water is ~0.06–0.10) but its stated basis does not apply,
-  and by this project's own standard that is a defect, not a rounding.
+- **`albedo_surface` is a water value now — 0.06 — and it is not a lever at all** (2026-08-20).
+  It was 0.08, justified in `param.py` by *"a quenching silicate melt is dark, measured
+  basaltic-melt albedos are 0.05–0.10"*: ATHAD's magma ocean, inherited unchanged into a model
+  whose surface is a 240 °C sea. 0.06 is water — a calm sea is 0.03–0.06 broadband at small
+  zenith angle, rising toward 0.06–0.08 once high-latitude incidence and whitecaps enter, and
+  the low-latitude weighting is the right one because a zero-obliquity planet puts 81 % of its
+  insolation (8/π², the same factor as above) in the tropics and subtropics. The
+  `MultiLayerRadiation` comment block was ATHAD's magma text verbatim, down to *"at 1500 K
+  nothing within 1200 K of the ice thresholds"*; it now describes this sea, and the variable is
+  `alb_surface_clear` in both trees rather than `alb_surface_molten`.
+
+  **MEASURED — 40 iterations, one binary, config-only A/B (`run_alb006` vs `run_alb008`), and
+  the result is a null so complete it is worth stating precisely:**
+
+  | | 0.08 | 0.06 |
+  |---|---|---|
+  | albedo field, max and min | 0.499996 / 0.499996 | **0.499996 / 0.499996** |
+  | mean planetary albedo | 0.5000 | 0.5000 |
+  | OLR at iteration 20 / 40 | 273.47 / 273.70 W/m² | **273.47 / 273.70** |
+  | photosphere, skin %, `Psi_max`, cloud water | 65.9 km, 58.6 %, 40515.96, 49.080208 g/kg | **all identical** |
+  | max `tau_above` | 2696177.796942 | 2696177.800091 (1.2e-09) |
+
+  **A 25 % change in the sea's albedo is invisible, and the mechanism is exact.** The cloud bump
+  composites as `alpha_eff = alpha_surf + (alpha_cloud − alpha_surf)·refl` with
+  `refl = tau/(tau+2)` on the condensate path, and this fork's deck saturates it: back out `refl`
+  from the printed field and it is **0.9999909**. The surface therefore contributes
+  `(alpha_cloud − alpha_surf)(1 − refl)` ≈ 4e-06 of the answer, and the two arms differ by
+  ~2e-07 in albedo — which is why everything downstream agrees to nine significant figures. The
+  albedo field is also *uniform*: max equals min to six decimals, so there is no latitude
+  gradient left for a surface value to show through.
+
+  **So this is `albedo_cloud` = 0.50 IS the planetary albedo, restated from the other side.**
+  Fixing `albedo_surface` was worth doing because a constant carrying the parent's conditions is
+  a defect whatever it is worth numerically — but nobody should expect a number from it while
+  the deck is total. **The lever is `albedo_cloud`, and the question underneath it is whether a
+  240 °C sea really maintains an unbroken optically thick deck at every latitude.**
 
 - **THE FIVE TRACE GASES ARE IN, AT ATHAD'S MOLE FRACTIONS** (2026-08-20). CH₄, NH₃, H₂, CO
   and SO₂ carry 0.014 each here now, where they were zero and documented as "gone: the epoch

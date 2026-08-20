@@ -33,8 +33,6 @@ double r_0_water;
 double t_equat_modern;
 double rad_equator_short;
 double rad_pole_short;
-double rad_equator;
-double rad_pole;
 double sigma;
 double kappa_H2O;
 double kappa_CO2;

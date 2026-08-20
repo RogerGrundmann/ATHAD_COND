@@ -350,24 +350,6 @@ cdef class Atmosphere:
             self._check_alive()
             self._thisptr.rad_pole_short = <double> value
     
-    property rad_equator:
-        def __get__(Atmosphere self):
-            self._check_alive()
-            return self._thisptr.rad_equator
-    
-        def __set__(Atmosphere self, value):
-            self._check_alive()
-            self._thisptr.rad_equator = <double> value
-    
-    property rad_pole:
-        def __get__(Atmosphere self):
-            self._check_alive()
-            return self._thisptr.rad_pole
-    
-        def __set__(Atmosphere self, value):
-            self._check_alive()
-            self._thisptr.rad_pole = <double> value
-    
     property sigma:
         def __get__(Atmosphere self):
             self._check_alive()

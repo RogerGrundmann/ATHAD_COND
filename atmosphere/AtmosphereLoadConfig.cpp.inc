@@ -35,8 +35,6 @@
     Config::FillDoubleWithElement(elem_common, "t_equat_modern", t_equat_modern);
     Config::FillDoubleWithElement(elem_common, "rad_equator_short", rad_equator_short);
     Config::FillDoubleWithElement(elem_common, "rad_pole_short", rad_pole_short);
-    Config::FillDoubleWithElement(elem_common, "rad_equator", rad_equator);
-    Config::FillDoubleWithElement(elem_common, "rad_pole", rad_pole);
     Config::FillDoubleWithElement(elem_common, "sigma", sigma);
     Config::FillDoubleWithElement(elem_common, "kappa_H2O", kappa_H2O);
     Config::FillDoubleWithElement(elem_common, "kappa_CO2", kappa_CO2);

@@ -28,8 +28,6 @@
         <t_equat_modern>15.4</t_equat_modern>  <!-- mean temperature of the modern earth in °C(double) -->
         <rad_equator_short>298.0</rad_equator_short>  <!-- ATHAD: TOA short wave insolation at the equator in W/m2(double) -->
         <rad_pole_short>0.0</rad_pole_short>  <!-- ATHAD: TOA short wave insolation at the poles in W/m2(double) -->
-        <rad_equator>398.2</rad_equator>  <!-- inherited Earth longwave boundary value in W/m2 (unused in radiation_mode 2)(double) -->
-        <rad_pole>360.0</rad_pole>  <!-- inherited Earth longwave boundary value in W/m2 (unused in radiation_mode 2)(double) -->
         <sigma>5.67028e-08</sigma>  <!-- Stefan-Boltzmann constant W/(m²*K4)(double) -->
         <kappa_H2O>0.01</kappa_H2O>  <!-- ATHAD: grey longwave mass absorption of water vapour in m2/kg(double) -->
         <kappa_CO2>0.001</kappa_CO2>  <!-- ATHAD: grey longwave mass absorption of CO2 in m2/kg(double) -->
@@ -71,7 +69,7 @@
         <cell_lat_scale>0.11</cell_lat_scale>  <!-- ATHAD_COND: Hadley-edge latitude as a fraction of Earth's; 0.11 = Held-Hou edge for this rotation rate and contrast, 1.0 = Earth(double) -->
         <cell_amp_mode>0</cell_amp_mode>  <!-- ATHAD_COND: scale the prescribed velocity amplitudes with cell_lat_scale; 0 = off, 1 = v,w by s (continuity), 2 = v by s and w by s^2 (angular momentum)(int) -->
         <n_cells_hemisphere>5</n_cells_hemisphere>  <!-- ATHAD_COND: prescribed circulation cells per hemisphere; 5 = this regime (Rhines ~21 deg bands), 3 = Earth(int) -->
-        <albedo_surface>0.08</albedo_surface>  <!-- ATHAD: clear-sky albedo of the molten silicate surface(double) -->
+        <albedo_surface>0.06</albedo_surface>  <!-- ATHAD_COND: clear-sky albedo of the liquid water sea surface(double) -->
         <albedo_cloud>0.5</albedo_cloud>  <!-- ATHAD: shortwave albedo of an optically thick cloud top(double) -->
         <epsilon_equator>0.48</epsilon_equator>  <!-- emissivity and absorptivity caused by other gases than water vapour/(by Häckel)(double) -->
         <epsilon_pole>0.45</epsilon_pole>  <!-- emissivity and absorptivity caused by other gases than water vapour at the poles(double) -->
