@@ -64,8 +64,38 @@ private:
     // residual, which heavy damping can satisfy while the cell is still far from saturation.
     // The trace prints both so the two can be told apart.
     // Default OFF: unset reproduces every number this tree has printed.
+    // ATM_SAT_LEGACY=1 restores BOTH pre-2026-08-20 behaviours together: the alpha_entry
+    // master gain and the step-based exit test. Default is the repaired path.
+    //
+    // (1) alpha_entry APPLIED THE -37 C ICE THRESHOLD TWICE. Inside the Newton loop it is
+    //     already the PHASE SPLIT -- CND = clamp((T - t_00)*t_range_inv), DEP = 1 - CND --
+    //     which is the physics: below -37 C supercooled liquid cannot exist, so condensation
+    //     becomes deposition. alpha_entry then re-applied the same threshold as a MASTER GAIN
+    //     on all five write-backs (S_c_c, c, cloud, ice, t), so a cell below ~236 K kept only
+    //     a few per cent of whatever the loop computed -- DEPOSITION INCLUDED, which is
+    //     precisely the process that should be running there. It also gated entry at
+    //     alpha_entry > 0.01, skipping cells below 213.2 K outright.
+    //
+    //     Invisible on Earth, where a cell at -37 C holds ~0.1 g/kg of vapour. Measured live
+    //     in ATHAD (its README item 64): level 38 free-running to 220-228 K with 683 g/kg of
+    //     vapour and alpha_entry = 0.036, i.e. the adjustment allowed to apply 3.6 % of its
+    //     own answer. In THIS fork the trace shows alpha_entry = 1.0000 and 0.9998 at the two
+    //     probed levels, so the gain never engages and the repair is expected to be a no-op
+    //     here -- which is exactly why this is the safe tree to make it in first.
+    //
+    // (2) THE EXIT TEST MEASURED THE STEP, NOT THE RESIDUAL. |q_v_b/q_v_hyp - 1| <= 1e-6 is a
+    //     statement about how far the last pass moved, and heavy damping (omega = 1/(1+Gain),
+    //     and Gain reaches 97 in ATHAD) makes the step small while the cell is still far from
+    //     saturation. ATHAD's trace caught it exiting with the step at 4.4e-06 while the
+    //     residual still swung +-0.003, on a limit cycle rather than a converged answer. The
+    //     repaired test is on |q_v_b - q_v_target| relative to q_v_target -- the thing the
+    //     loop is actually trying to drive to zero -- with the step test kept as a SECOND,
+    //     looser guard so a genuinely stalled iteration still terminates.
+    static inline const bool sat_legacy = [](){
+        const char* e = getenv("ATM_SAT_LEGACY"); return (e && atoi(e) != 0); }();
     static inline const bool sat_no_alpha = [](){
-        const char* e = getenv("ATM_SAT_NO_ALPHA"); return (e && atoi(e) != 0); }();
+        const char* e = getenv("ATM_SAT_NO_ALPHA");
+        return (e && atoi(e) != 0) || !sat_legacy; }();
     static inline const bool sat_trace = [](){
         const char* e = getenv("ATM_SAT_TRACE"); return (e && atoi(e) != 0); }();
     // The two traced levels default to levels 20 (10.8 km, mid-column) and 48 (63 km, the
@@ -311,7 +341,15 @@ private:
                                             (q_v_hyp != 0.0)
                                               ? std::fabs(q_v_b / q_v_hyp - 1.0) : -1.0);
 
-                            if (fabs(q_v_b / q_v_hyp - 1.0) <= 1.0e-6)
+                            // Converged when the RESIDUAL is small -- q_v_b is at its target
+                            // -- not when the STEP is small, which damping alone can produce.
+                            // The step test survives as a looser backstop for a stalled loop.
+                            const double resid = (q_v_target > 1e-12)
+                                ? std::fabs(q_v_b - q_v_target) / q_v_target
+                                : std::fabs(q_v_b - q_v_target);
+                            const double step_rel = std::fabs(q_v_b / q_v_hyp - 1.0);
+                            if (sat_legacy ? (step_rel <= 1.0e-6)
+                                           : (resid <= 1.0e-6 || step_rel <= 1.0e-12))
                                 break;
                         }
 
