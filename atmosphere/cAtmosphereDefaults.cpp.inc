@@ -66,6 +66,7 @@ void cAtmosphereModel::SetDefaultConfig() {
   coeff_Dalton = 0.7;
   convection_perturbation = 1;
   convection_mode = 1;
+  mc_M_max = 100.0;
   iter_prec = 3;
   evap_model = "Meyer";
   L_atm = 6287.5;

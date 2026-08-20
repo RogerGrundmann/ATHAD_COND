@@ -359,6 +359,35 @@ def main():
 #            ('convection_mode', 'convection type: 0=deep only (precipitating), 1=deep+shallow (non-precipitating if p_diff<p_stat_diff), 2=deep+shallow+midlevel (also non-precipitating for cloud base above p_stat_midlevel/700 hPa)', 'int', 0),
             ('convection_mode', 'convection type: 0=deep only (precipitating), 1=deep+shallow (non-precipitating if p_diff<p_stat_diff), 2=deep+shallow+midlevel (also non-precipitating for cloud base above p_stat_midlevel/700 hPa)', 'int', 1),
 
+            # ATHAD_COND: ceiling on the convective mass flux |M_u|, |M_d|, in kg/(m2 s).
+            # A PARAMETER since 2026-08-20, and it was two bare literals before that — one in
+            # AtomMoistConvection (read by clamp_M inside the recurrences) and a second,
+            # shadowing constexpr inside rhsForcing's safe_cap. Both 3.0, so they agreed by
+            # luck rather than by construction; a constant with two definitions is the pattern
+            # this tree keeps finding.
+            #
+            # 3.0 IS EARTH'S, AND IT WAS BINDING EVERYWHERE. Its own comment reads "~10x any
+            # realistic value" with "healthy ~0.3" — true at 1.2 kg/m3. Measured here at 40
+            # iterations, M_u sat at exactly 3.0000 from 2.2 km to 21.9 km in up to 177 of 181
+            # columns: the vertical structure of the convective mass flux was not computed, it
+            # was the cap.
+            #
+            # SIZED TWO WAYS, AND THEY AGREE:
+            #  (1) DENSITY. M = rho*sigma*w and only rho changes between the planets. Earth's
+            #      3.0 at 1.2 kg/m3 implies a ceiling sigma*w = 2.5 m/s; the same sigma*w at
+            #      this model's cloud-base density (36.2 kg/m3 at 2.2 km) is 90, and at the sea
+            #      surface (39.3-42.1) is 98-105.
+            #  (2) WHAT THE SCHEME ACTUALLY WANTS. Run with the cap lifted to 1e9, |M_u| is
+            #      BOUNDED and steady — 13.7 kg/(m2 s) at iteration 0, 13.0 at 40, no runaway —
+            #      which is sigma*w = 0.4 m/s at that level's density, i.e. the same sigma*w
+            #      Earth's HEALTHY convection has. Earth's cap sits 10x above its healthy
+            #      value; 10x of 13.7 is 137.
+            #
+            # 100.0 is between them: 33x Earth's, the density ratio, with 7.3x headroom over
+            # the model's own uncapped peak. That restores the cap to what it is for — a
+            # NaN/runaway backstop — rather than a limiter that sets the answer.
+            ('mc_M_max', 'ATHAD_COND: ceiling on convective mass flux |M_u|,|M_d| in kg/(m2 s)', 'double', 100.0),
+
 #            ('iter_prec', 'precipitation sub-iteration count: min 3 for evaporation (e_d, e_p) to act on non-zero P_conv; check convergence at 4-5', 'int', 4),
             ('iter_prec', 'precipitation sub-iteration count: min 3 for evaporation (e_d, e_p) to act on non-zero P_conv; check convergence at 4-5', 'int', 3),
 

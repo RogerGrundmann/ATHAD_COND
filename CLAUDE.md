@@ -151,6 +151,7 @@ is what ATHAD does and is only equivalent when the water field is uniform too.
 | `albedo_cloud` | 0.50 | IS the planetary albedo (0.4997 measured); saturates wherever condensate exists, which is now everywhere |
 | `albedo_surface` | **0.06** | A **water** value since 2026-08-20; it was 0.08 with ATHAD's basaltic-melt justification attached. Clear-sky only, and the cloud bump overwrites it almost everywhere, so its reach is small — measured, not assumed |
 | `omega` | 3.17e-4 (5.5 h day) | Inherited; this epoch is later and slower |
+| `mc_M_max` | **100 kg/(m²s)** | Sized 2026-08-20 from the density ratio (Earth's 3.0 implies σw = 2.5 m/s; ×36–42 kg/m³ here) and confirmed against the uncapped scheme's own 13.0–13.7. Was Earth's 3.0 and **pinned from 2.2 to 21.9 km in 177 of 181 columns** |
 | `delta_i_c` | 500 s | Bechtold convective timescale, Earth-calibrated. A time, not a pressure — no unit error, and no evidence here to replace it |
 
 ## What the model currently says
@@ -254,15 +255,16 @@ threading defect (ATURAN `ffd0e0e`); report failures and limits in the README (A
   plotted is what is integrated; the raw transported CO2 array is `CO2_tracer`. **Unverified in
   this fork — no COND run has been made against the renamed writers.**
 - **`ATM_MC_GEOPOTENTIAL` PAYS HERE — measured 2026-08-20, and it is the first updraft
-  condensation in either fork.** `max c_u` 0 → **7.19e-04 g/kg/s at 24 854 m**, with `max s_u`
+  condensation in either fork.** `max c_u` 0 → **3.116e-03 g/kg/s at 24 854 m** (the 7.19e-04 first measured was at the old `M_max` = 3.0, which suppressed the mass flux 4.3× — superseded), with `max s_u`
   moving from the cloud base (661 m) to the top of the column (24 854 m). The reason it works here
   and not in ATHAD is geometry: this fork's convective column is **20 km deep** (base 1786–2200 m,
   LFS 20.5–28.1 km, 47 % of columns convecting) because its triggers have been fractions of surface
   pressure since the fork was cut, while ATHAD's updraft is one grid level deep and has no ascent
   for the geopotential to act on. Nothing integrated moves — OLR, photosphere, Ψ and the water
   column are identical — which is the albedo wall, not a null result about the physics.
-  **`max M_u` is pinned at `M_max` = 3.0 kg/(m²s)**: size that Earth constant before quoting
-  anything from this scheme.
+  **ON BY DEFAULT here since 2026-08-20** (`ATM_MC_GEOPOTENTIAL=0` restores the old behaviour);
+  ATHAD keeps it off, because its updraft is one grid level deep. `M_max` is sized now (100, see
+  the table above), so the mass flux is no longer a cap.
 - **The 40-iteration OLR is reproducible to only ~0.5 % across a thread-count change in ATHAD**
   (item 61), and this fork shares the convective trigger set that amplifies it. Ψ, albedo and the
   photosphere are unmoved at 1e-6. **State the thread count with any OLR number**, and treat COND's

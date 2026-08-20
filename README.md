@@ -533,6 +533,46 @@ over the 1 bar reference". Both describe ATHAD; here it is 60 bar. The code is r
 
 ## Remaining work
 
+- **`M_max` SIZED, AND THE GEOPOTENTIAL IS ON BY DEFAULT** (2026-08-20). Two changes that
+  belong together, because the first was suppressing the second by 4.3x.
+
+  **`mc_M_max` is a config parameter now, at 100 kg/(m²s).** It was a bare 3.0 — Earth's, whose
+  own comment reads "~10x any realistic value" with "healthy ~0.3", true at 1.2 kg/m³ — written
+  in **two** places: the namespace constant `clamp_M` reads, and a second shadowing `constexpr`
+  inside `rhsForcing`. Both 3.0, agreeing by luck. Measured, `M_u` sat at **exactly 3.0000 from
+  2.2 km to 21.9 km in up to 177 of 181 columns**: the vertical structure of the convective mass
+  flux was not computed, it was the cap.
+
+  Sized two ways that agree. **Density**: `M = ρ·σ·w` and only ρ changes between the planets;
+  Earth's 3.0 at 1.2 kg/m³ implies a ceiling `σw` = 2.5 m/s, which at this model's cloud-base
+  density (36.2 at 2.2 km) is 90 and at the sea surface (39.3–42.1) is 98–105. **What the scheme
+  wants**: with the cap lifted to 1e9, `|M_u|` is bounded and steady — 13.7 kg/(m²s) at iteration
+  0, 13.0 at 40, no runaway — i.e. `σw` ≈ 0.4 m/s, the same `σw` Earth's *healthy* convection has.
+  Earth's cap sits 10x above its healthy value; 10x of 13.7 is 137. **100.0 is 33x Earth's, the
+  density ratio, with 7.3x headroom.** Verified: at 100 every number matches the uncapped run to
+  the digit, so the cap is a backstop again rather than the answer.
+
+  **`ATM_MC_GEOPOTENTIAL` is on by default here** (`=0` restores the old behaviour), and the pair
+  re-measured at the new cap — one binary, env-only, 40 iterations:
+
+  | | off | on |
+  |---|---|---|
+  | **`max c_u`** | 0.000000 g/kg/s | **3.116e-03 @ 24 854 m** |
+  | `max s_u`, and where | 2.545962 at **661 m** | 2.911126 at **24 854 m** |
+  | `max MC_t` | 4.383e-03 K/s | 5.080e-03 (+15.9 %) |
+  | `max M_u` | 13035.640441 g/m²s | 13041.235334 (+0.04 %) |
+  | OLR / photosphere / `Psi_max` / precipitable water | 273.70 / 65.9 km / 40515.99 / 160626.497 | **all identical** |
+
+  **`c_u` = 3.12e-03 is 4.3x the 7.19e-04 first reported, and 4.3x is exactly what the cap was
+  suppressing the mass flux by** (3.0 against the natural 13.0) — `c_u = dcond·M_u/(ρ·step)`, so
+  the condensation rate scales with the flux. **The earlier figure is superseded.** The rest holds:
+  condensation at 24.9 km, `max s_u` moving from cloud base to column top, and nothing integrated
+  moving — the albedo wall. `max M_u` differing by 0.04 % between arms confirms this is a genuine
+  pair and not a re-measurement of a cap. Runs: `run_mmax_free`, `run_mmax100`, `run_pair_{on,off}`.
+
+  **ATHAD keeps the geopotential OFF**: its updraft is one grid level deep and has no ascent for
+  it to act on. The code is identical in both trees; only the default differs, deliberately.
+
 - **`ATM_MC_GEOPOTENTIAL` PAYS HERE, AND IT IS THE FIRST UPDRAFT CONDENSATION IN EITHER FORK**
   (2026-08-20, ATHAD README item 63). Item 53 predicted that adding `g·z` to the static energy
   would let the rising parcel cool and condense; ATHAD tried it and got nothing, because its

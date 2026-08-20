@@ -621,6 +621,15 @@ cdef class Atmosphere:
             self._check_alive()
             self._thisptr.convection_mode = <int> value
     
+    property mc_M_max:
+        def __get__(Atmosphere self):
+            self._check_alive()
+            return self._thisptr.mc_M_max
+    
+        def __set__(Atmosphere self, value):
+            self._check_alive()
+            self._thisptr.mc_M_max = <double> value
+    
     property iter_prec:
         def __get__(Atmosphere self):
             self._check_alive()

@@ -70,6 +70,7 @@
     Config::FillDoubleWithElement(elem_atmosphere, "coeff_Dalton", coeff_Dalton);
     Config::FillIntWithElement(elem_atmosphere, "convection_perturbation", convection_perturbation);
     Config::FillIntWithElement(elem_atmosphere, "convection_mode", convection_mode);
+    Config::FillDoubleWithElement(elem_atmosphere, "mc_M_max", mc_M_max);
     Config::FillIntWithElement(elem_atmosphere, "iter_prec", iter_prec);
     Config::FillStringWithElement(elem_atmosphere, "evap_model", evap_model);
     Config::FillDoubleWithElement(elem_atmosphere, "L_atm", L_atm);

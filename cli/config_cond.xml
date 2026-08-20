@@ -60,6 +60,7 @@
         <coeff_Dalton>0.7</coeff_Dalton>  <!-- diffusion coefficient in evaporation by Dalton(double) -->
         <convection_perturbation>1</convection_perturbation>  <!-- convective trigger perturbation: 0=fixed, 1=Bechtold (2008) surface-flux-based for shallow/fixed for deep(int) -->
         <convection_mode>1</convection_mode>  <!-- convection type: 0=deep only (precipitating), 1=deep+shallow (non-precipitating if p_diff<p_stat_diff), 2=deep+shallow+midlevel (also non-precipitating for cloud base above p_stat_midlevel/700 hPa)(int) -->
+        <mc_M_max>100.0</mc_M_max>  <!-- ATHAD_COND: ceiling on convective mass flux |M_u|,|M_d| in kg/(m2 s)(double) -->
         <iter_prec>3</iter_prec>  <!-- precipitation sub-iteration count: min 3 for evaporation (e_d, e_p) to act on non-zero P_conv; check convergence at 4-5(int) -->
         <evap_model>Meyer</evap_model>  <!-- evaporation formula driving surface humidity update: Dalton, Meyer, or Rohwer(string) -->
         <L_atm>6287.5</L_atm>  <!-- ATHAD_COND: amplitude of the radial stretch in m; shell = (exp(zeta)-1)*L_atm = 120 km(double) -->

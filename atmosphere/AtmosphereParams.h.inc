@@ -65,6 +65,7 @@ int panorama_print;
 double coeff_Dalton;
 int convection_perturbation;
 int convection_mode;
+double mc_M_max;
 int iter_prec;
 string evap_model;
 double L_atm;

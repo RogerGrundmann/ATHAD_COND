@@ -66,12 +66,26 @@ namespace AtomMoistConvection {
     // RESIDUE: the s <-> T pair stays cp_l-based, so the implied parcel lapse rate is g/cp_l
     // everywhere. The honest repair is a local-cp parcel integration, not a substitution.
     //
-    // UNMEASURED IN THIS FORK. In ATHAD it changed nothing in the updraft because the updraft
-    // there is ONE GRID LEVEL deep (cloud base and LFS adjacent, so the recurrence loop is
-    // empty) — check that here before expecting the c_u this fork lost in item 53 to come back.
-    // Default OFF.
+    // ON BY DEFAULT IN THIS FORK SINCE 2026-08-20, and measured before the flip: it produces
+    // the FIRST UPDRAFT CONDENSATION in either tree. max c_u 0 -> 7.19e-04 g/kg/s at 24 854 m,
+    // with max s_u moving from the cloud base (661 m) to the top of the column (24 854 m),
+    // which is what a static energy must do once g*z is in it. The condensation appears 25 km
+    // up because a parcel cooling at g/cp_l = 4.81 K/km for 23 km first saturates there.
+    // Nothing integrated moved (OLR, photosphere, Psi, precipitable water identical) — the
+    // albedo wall, not a null about the parcel physics.
+    //
+    // IT WORKS HERE AND NOT IN ATHAD FOR ONE REASON: geometry. This fork's convective column
+    // is 20 km deep (cloud base 1786-2200 m, LFS 20.5-28.1 km, 47 % of columns convecting)
+    // because its triggers are fractions of surface pressure. ATHAD's updraft is ONE grid
+    // level deep — invariant 2 forbids condensation below 236 km there, whatever the triggers
+    // say (ATHAD README item 63) — so it has no ascent for the geopotential to act on, and the
+    // knob stays OFF there. THE TWO TREES DELIBERATELY DIFFER ON THIS DEFAULT; the code is
+    // identical and only the default is not.
+    //
+    // ATM_MC_GEOPOTENTIAL=0 restores the missing-g*z behaviour and every number that predates
+    // the flip. Unset or =1 is on.
     static const bool s_geopotential = [](){
-        const char* e = getenv("ATM_MC_GEOPOTENTIAL"); return (e && atoi(e) != 0); }();
+        const char* e = getenv("ATM_MC_GEOPOTENTIAL"); return !(e && atoi(e) == 0); }();
 
     constexpr double a_ev = 1.0e-3;
     constexpr double b_ev = 5.9;
@@ -130,7 +144,8 @@ namespace AtomMoistConvection {
     // capped only the final value used in the RHS; the internal c_u, q_v_u,
     // q_v_d, P_conv chain still saw the runaway. Same magnitude as the safe_cap
     // M_max in rhsForcing (~10× any realistic value).
-    constexpr double M_max = 3.0;                                       // [kg/(m²s)] (also used in rhsForcing safe_cap)
+    // M_max is the config parameter mc_M_max now — see param.py. It was a bare 3.0 here AND
+    // a second, shadowing 3.0 inside rhsForcing, which is one constant with two definitions.
 
     // Cloud-base mass-flux coefficient (fix #3, 2026-06-23). The old seed M_u,base = ρ·u
     // used the RESOLVED vertical velocity (~cm/s at the LCL) → M_u≈0.03 kg/m²s, below
@@ -283,11 +298,11 @@ private:
     // cannot drive c_u/q_v_u/q_v_d/P_conv into runaway before rhsForcing's
     // safe_cap runs at the end of the iter_prec loop. Bit-level NaN/Inf reset
     // (under -ffast-math std::min/max are unreliable on NaN).
-    static inline double clamp_M(double v) noexcept {
+    inline double clamp_M(double v) const noexcept {
         std::uint64_t bits;
         std::memcpy(&bits, &v, sizeof(bits));
         if ((bits & 0x7FF0000000000000ULL) == 0x7FF0000000000000ULL) return 0.0;
-        const double M_max = AtomMoistConvection::M_max;
+        const double M_max = m.mc_M_max;          // config parameter, was a bare 3.0
         return (v < -M_max) ? -M_max : (v > M_max) ? M_max : v;
     }
 
@@ -1429,7 +1444,7 @@ void findCloudBaseLFS() {
         // near-surface cell pegged MC_t/MC_w at the previous caps every step (saturating
         // u/v/w at ±100 m/s), so the old caps were the velocity forcing in disguise. New
         // values are 3–5× physical, so realistic convection is still untouched.
-        constexpr double M_max   = 3.0;        // [kg/(m²s)]  up/downdraft mass flux  (was 10.0; healthy ~0.3)
+        const double M_max       = m.mc_M_max; // [kg/(m²s)]  up/downdraft mass flux, config parameter
         constexpr double MCt_max = 0.01;       // [K/s]       convective heating      (was 0.05; ~36 K/hr, still 3× realistic)
         // 2026-06-25: 2.0e-4 (=0.2 g/kg/s) let the convective moisture pump flood the
         // near-surface layer over high tropical orography (Ethiopian highlands 9°N/37°E,
