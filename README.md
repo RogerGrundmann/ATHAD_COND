@@ -533,6 +533,28 @@ over the 1 bar reference". Both describe ATHAD; here it is 60 bar. The code is r
 
 ## Remaining work
 
+- **The saturation-adjustment knobs are ported, and this fork is the control that settles what
+  `alpha_entry` is worth** (ATHAD README item 64). `ATM_SAT_TRACE=1` (print-only) and
+  `ATM_SAT_NO_ALPHA=1` (default off); the traced levels default to 20 (10.8 km) and 48 (63 km,
+  the 148.9 % tail) here against ATHAD's 37/38, settable with `ATM_SAT_TRACE_I1/I2`.
+
+  | | level 20 — 27.8 bar, 462 K | level 48 — 0.075 bar, 279 K |
+  |---|---|---|
+  | entry `q_v/q_sat` | 1.00 | 1.00 → 1.07 |
+  | `alpha_entry` | **1.000000** | **0.9998** |
+  | latent heating over the call | +0.05 K | +0.78 K |
+  | condensed | 0.0459 kg/kg | 0.000398 |
+  | exit `q_v` vs `q_sat` | equal to six digits | equal to six digits |
+
+  **`alpha_entry` never engages here** — the −37 °C ice threshold it doubles is 40 to 225 K below
+  this fork's condensing column, so the master gain is 1 and the defect is inert. And the
+  adjustment converges cleanly to `q_v = q_sat`: none of ATHAD's pathology appears, because
+  condensing 0.046 kg/kg at 27.8 bar releases **0.05 K** rather than the 76 K that throws
+  ATHAD's level 38 past boiling and inverts its target. **Same code, same call, opposite
+  behaviour — set by the pressure and the temperature of the cell, not by the scheme.** That is
+  the control ATHAD item 64 asked for, and it confirms its conclusion: ATHAD's supersaturation
+  is a temperature problem, not a saturation-adjustment problem.
+
 - **`M_max` SIZED, AND THE GEOPOTENTIAL IS ON BY DEFAULT** (2026-08-20). Two changes that
   belong together, because the first was suppressing the second by 4.3x.
 
