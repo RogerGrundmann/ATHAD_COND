@@ -249,10 +249,46 @@ private:
                         // and S_s_rim ∝ Snow then amplified P_snow geometrically down the column
                         // to overflow (the ThreeCat NaN blow-up). Flooring at P_norm_floor bounds
                         // the normalized ratios; the flux cap below guarantees finiteness.
+                        // ATM_PRECIP_DIMENSIONAL=1 — THE FLUX IS NORMALISED TWICE.
+                        //
+                        // These power laws invert the Marshall-Palmer flux/content relation. For
+                        // an exponential size distribution the flux is P = B*lambda^-4.5 and the
+                        // content is q = A*lambda^-4, so eliminating lambda gives
+                        //
+                        //     q_r = A_r * (P_rain / B_rad)^(8/9)
+                        //
+                        // and B_rad = rho_w*pi*N_r_0*v_r_0*Gamma(4.5)/Gamma(4) IS that physical
+                        // normalisation — it is already applied, as B_rad_neg89, immediately
+                        // beside the term below. Dividing by P_rain_0 as well is a SECOND
+                        // normalisation, by a non-constant, non-physical quantity.
+                        //
+                        // The units say the same thing about accretion. c_ac is 0.24 m2/kg, so
+                        // for S_ac = c_ac * q_c * X to come out in 1/s, X must carry kg/(m2 s) —
+                        // the units of a mass flux. P_rain/P_rain_0 is dimensionless, so the
+                        // shipped expression yields m2/kg.
+                        //
+                        // WHAT IT COSTS. P_rain rises monotonically downward and P_rain_0 is its
+                        // surface value, so Rain runs 0 -> 1 and sits at ~1 near the ground. The
+                        // flux dependence is therefore erased and S_ac collapses to c_ac*q_c. At
+                        // COND's 49 g/kg that is 1.2e-2 /s, 12x over S_max; with the dimensional
+                        // flux at the cap it is 1.3e-4 /s, comfortably under. ~92x.
+                        //
+                        // WHY IT IS LATENT UPSTREAM. ATOM_Precipitation has the identical code.
+                        // On Earth q_c ~ 1e-3 kg/kg, so the inflated S_ac is ~2.4e-4 /s and never
+                        // reaches the cap; here q_c is 49x larger and it does. The comment this
+                        // replaces records that the normalisation was added to stop a P_snow
+                        // riming overflow — i.e. a stability patch that changed the physics 92x.
+                        // Both caps (S_max, P_max_flux) remain, so the dimensional branch cannot
+                        // reintroduce the NaN it was guarding against.
+                        //
+                        // Default off; off-branch bit-identical.
+                        static const bool precip_dim = [](){
+                            const char* e = getenv("ATM_PRECIP_DIMENSIONAL"); return e && atoi(e) != 0; }();
+
                         constexpr double P_norm_floor = 1.0e-6;      // kg/(m2*s) ~0.09 mm/d
-                        double P_rain_0    = std::max(m.P_rain.x[0][j][k],    P_norm_floor);
-                        double P_snow_0    = std::max(m.P_snow.x[0][j][k],    P_norm_floor);
-                        double P_graupel_0 = std::max(m.P_graupel.x[0][j][k], P_norm_floor);
+                        double P_rain_0    = precip_dim ? 1.0 : std::max(m.P_rain.x[0][j][k],    P_norm_floor);
+                        double P_snow_0    = precip_dim ? 1.0 : std::max(m.P_snow.x[0][j][k],    P_norm_floor);
+                        double P_graupel_0 = precip_dim ? 1.0 : std::max(m.P_graupel.x[0][j][k], P_norm_floor);
 
                         double Rain    = m.P_rain.x[i][j][k]    / P_rain_0;
                         double Snow    = m.P_snow.x[i][j][k]    / P_snow_0;
@@ -282,8 +318,44 @@ private:
                         double q_sat = IceSchemeCommon::qSatWater(m, t_u, i, j, k);
                         double q_Ice = IceSchemeCommon::qSatIce(m, t_u, i, j, k);
 
-                        double dt_rain_dim = step_i / 1.6;
-                        double dt_snow_dim = step_i / 0.96;
+                        // ATM_FALLSPEED_RHO=1 — DENSITY-SCALED TERMINAL FALL SPEEDS.
+                        //
+                        // 1.6 m/s (rain) and 0.96 m/s (snow) are Earth values, measured in air
+                        // of ~1.2 kg/m3. Terminal velocity balances gravity against drag,
+                        // v_t = sqrt(4 g D rho_particle / (3 C_d rho_air)), so v_t ~ 1/sqrt(rho_air)
+                        // for a given particle. COND's surface air is 39 kg/m3 and PERID's 16.5,
+                        // so rain there falls ~5.7x and ~3.7x slower than these constants assume.
+                        //
+                        // WHAT IT DOES AND DOES NOT REACH. These speeds enter ONLY through the
+                        // residence times below, and every rate built on them has the form
+                        // amount/dt (S_c_frz, S_nuc, S_i_melt, S_r_frz, and the deposition
+                        // throttle). A slower fall is a LONGER residence, hence a SMALLER rate --
+                        // the opposite of the intuition for a drop collecting as it falls, because
+                        // this scheme's formulation is "the conversion completes in one residence
+                        // time", not "the drop sweeps a volume". Autoconversion (c_c_au) and
+                        // accretion (c_ac) do NOT use dt at all, and accretion is the term that
+                        // breaches S_max, so this correction is not expected to move the
+                        // precipitation much. It is made because it is right, and measured to find
+                        // out, not because it is the rainfall fix.
+                        //
+                        // THE UPPER CLAMP IS REAL AND IS STATED RATHER THAN HIDDEN. 1/sqrt(rho)
+                        // diverges as rho -> 0: at the lid rho ~ 1e-4 kg/m3 it would give 176 m/s,
+                        // which is neither a terminal velocity nor a regime this drag law covers
+                        // (drops break up well below it, and the continuum assumption fails).
+                        // v_fac is clamped to [0.05, 1.0], i.e. the corrected speed is never
+                        // FASTER than Earth's. The upper clamp binds wherever r_humid < 1.2041,
+                        // which is the thin upper air where there is essentially no condensate to
+                        // fall; the lower clamp corresponds to rho = 481 kg/m3 and is an inert
+                        // guard. Default off; off-branch bit-identical.
+                        static const bool fall_rho = [](){
+                            const char* e = getenv("ATM_FALLSPEED_RHO"); return e && atoi(e) != 0; }();
+                        constexpr double rho_ref_fall = 1.2041;      // kg/m3, Earth surface air
+                        double v_fac = 1.0;
+                        if(fall_rho && r_h_i > 0.0)
+                            v_fac = std::min(1.0, std::max(0.05, std::sqrt(rho_ref_fall / r_h_i)));
+
+                        double dt_rain_dim = step_i / (1.6  * v_fac);
+                        double dt_snow_dim = step_i / (0.96 * v_fac);
 
                         // Precompute shared pow() terms for snow/graupel deposition/melting
                         double rh_rqs_08 = (r_q_s > 0.0) ? pow(r_h_i * r_q_s, 0.8)     : 0.0;
