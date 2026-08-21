@@ -1475,6 +1475,100 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
 
                 UtilsAtm(*this).precipitationSum();
 
+                // ATM_PRECIP_BUDGET=1 — A LOCAL RAIN-RATE SCALE THAT NEEDS NO EQUILIBRIUM.
+                //
+                // P = E is a STEADY-STATE identity and these models are nowhere near it:
+                // ATHAD_COND holds 160 m of precipitable water, which takes 620 days to drain
+                // at the shipped rate against runs worth minutes (item 47's timescale). So
+                // P >> E is what a spin-up should look like and is not by itself a defect.
+                //
+                // This is the local test instead, per column and instantaneous. Precipitation
+                // cannot exceed what actually condensed:
+                //
+                //     C = SUM_i rho_i * S_c_c_i * dz_i      [kg/(m2 s)]   condensation supply
+                //     P = P_rain[0] + P_snow[0] + P_graupel[0]            surface flux
+                //
+                // READ THE GLOBAL RATIO, NOT THE PER-COLUMN ONE. This diagnostic was written
+                // with the claim that P/C <= 1 is "required by mass conservation alone". THAT
+                // IS WRONG, in two independent ways, and the per-column figures below must not
+                // be read as evidence of water creation:
+                //
+                //   - CONDENSATE ADVECTS. cloud, rain and ice are transported fields, so a
+                //     column may legitimately rain more than it condensed by importing
+                //     condensate from its neighbours. The bound holds for the domain, not for
+                //     a column.
+                //   - THE MEAN OF RATIOS IS NOT THE RATIO OF MEANS. Columns with a tiny C and
+                //     a capped P give enormous ratios and dominate the average. Measured in
+                //     ATHAD_COND: per-column mean P/C = 15.7 and max 154, while the GLOBAL
+                //     ratio is 0.577. The first two numbers are an artefact of the statistic.
+                //
+                // So n_over below is reported for shape, not as a verdict. The sound number is
+                // the global P/C, which is a precipitation EFFICIENCY: what fraction of the
+                // water taken out of the vapour reaches the ground.
+                //
+                // WHAT IT MEASURED, and it points the opposite way from the estimate that
+                // prompted it. Global P/C = 0.577, i.e. 58 % efficiency — high but not
+                // unphysical. Mean condensation is 5.20e-3 kg/(m2 s) = 449 mm/d against a
+                // P_max_flux of 259.2, so THE CAP SITS AT 58 % OF THE LOCALLY SUPPORTED RATE:
+                // binding, but within a factor of two rather than orders below. An earlier
+                // estimate putting autoconversion at 976x the cap took MAX cloud water,
+                // 49 g/kg, over 5 km at rho 30 and treated a local peak as typical; the
+                // column-integrated condensation says otherwise. On this evidence c_c_au and
+                // c_ac are producing about what condensation supports and are NOT indicted.
+                //
+                // What the scale does indict is that condensation is 449 mm/d against an
+                // evaporation of 17.2 — 26x — which is the 160 m reservoir draining, i.e.
+                // spin-up, not microphysics.
+                //
+                // Placed BEFORE the S_max cap below deliberately, so both sides are what the
+                // ice scheme actually produced rather than what the clamp left of it.
+                // Print-only, default off; it reads fields and writes none.
+                {
+                    static const bool precip_budget = [](){
+                        const char* e = getenv("ATM_PRECIP_BUDGET"); return e && atoi(e) != 0; }();
+                    if(precip_budget){
+                        double r_min = 1.0e30, r_max = 0.0, r_sum = 0.0;
+                        double C_sum = 0.0, P_sum = 0.0;
+                        long long n = 0, n_over = 0;
+                        #pragma omp parallel for collapse(2) schedule(static) \
+                                reduction(min:r_min) reduction(max:r_max) \
+                                reduction(+:r_sum,C_sum,P_sum,n,n_over)
+                        for(int j = 0; j < jm; j++){
+                            for(int k = 0; k < km; k++){
+                                double C = 0.0;
+                                for(int i = 1; i < im; i++){
+                                    const double dz = get_layer_height(i) - get_layer_height(i-1);
+                                    // S_c_c is vapour -> cloud, positive for condensation
+                                    // (S_v = -S_c_c + ...). Evaporation is a separate term and
+                                    // is deliberately not netted here: the bound is on what was
+                                    // condensed, not on the net.
+                                    const double s = S_c_c.x[i][j][k];
+                                    if(s > 0.0) C += r_humid.x[i][j][k] * s * dz;
+                                }
+                                const double P = P_rain.x[0][j][k] + P_snow.x[0][j][k]
+                                               + P_graupel.x[0][j][k];
+                                if(C > 1.0e-30 && P > 0.0){
+                                    const double r = P / C;
+                                    r_min = std::min(r_min, r);
+                                    r_max = std::max(r_max, r);
+                                    r_sum += r; n++;
+                                    if(r > 1.0) n_over++;
+                                }
+                                C_sum += C; P_sum += P;
+                            }
+                        }
+                        cout << "      AGCM: precip budget — P/C over " << n << " raining columns:"
+                             << "  min " << std::scientific << std::setprecision(3) << r_min
+                             << "  mean " << (n ? r_sum/(double)n : 0.0)
+                             << "  max " << r_max << endl;
+                        cout << "            " << n_over << " of " << n
+                             << " columns with P/C > 1 (shape only — see comment);  GLOBAL P/C = "
+                             << (C_sum > 0.0 ? P_sum/C_sum : 0.0)
+                             << "   (C " << C_sum << ", P " << P_sum << " kg/(m2 s) summed)"
+                             << std::defaultfloat << endl;
+                    }
+                }
+
                 // Physical caps on the microphysics source terms.
                 // The ice-scheme S-terms feed rhs_t (latent heat: S_c,S_r,S_i,S_s,S_g)
                 // and rhs_c (moisture: S_v) UNCAPPED. They depend on c/cloud/ice, so
