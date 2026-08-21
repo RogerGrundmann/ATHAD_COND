@@ -1637,6 +1637,76 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                         cout << "            cloud ice   in " << n_ci << " cells, T range "
                              << (n_ci ? T_ci_min : 0.0) << " .. " << (n_ci ? T_ci_max : 0.0)
                              << " K" << std::defaultfloat << endl;
+
+                        // CAN S_i_dep FIRE AT ALL? It is the only ice source left once
+                        // S_c_frz's 236.15 K gate is shown unreachable and S_nuc is gated on
+                        // ice == 0. It needs BOTH
+                        //     N_i > 0        <=>  236.15 < T <= 273.15   (depositionThrottle)
+                        //     c > q_Ice            vapour supersaturated over ice
+                        // so counting the overlap decides whether ice production is blocked by
+                        // geometry (no cells satisfy both) or by magnitude (cells qualify but
+                        // the sinks win). Those call for different repairs, and max S_i =
+                        // 0.000000 exactly does not distinguish them.
+                        long long n_window = 0, n_ssi = 0, n_both = 0;
+                        double ssi_max = 0.0;
+                        #pragma omp parallel for collapse(2) schedule(static) \
+                                reduction(+:n_window,n_ssi,n_both) reduction(max:ssi_max)
+                        for(int i = 0; i < im; i++){
+                            for(int j = 0; j < jm; j++){
+                                for(int k = 0; k < km; k++){
+                                    const double T = t.x[i][j][k] * t_0;
+                                    const bool in_win = (T <= 273.15 && T > 236.15);
+                                    const double qI = IceSchemeCommon::qSatIce(*this, T, i, j, k);
+                                    const double ss = c.x[i][j][k] - qI;
+                                    if(in_win) n_window++;
+                                    if(ss > 0.0) n_ssi++;
+                                    if(in_win && ss > 0.0){ n_both++; ssi_max = std::max(ssi_max, ss); }
+                                }
+                            }
+                        }
+                        cout << "            S_i_dep gate: N_i window (236.15 < T <= 273.15) "
+                             << n_window << " cells,  c > q_Ice " << n_ssi
+                             << " cells,  BOTH " << n_both << endl;
+                        cout << "            max (c - q_Ice) inside the window = "
+                             << std::scientific << std::setprecision(3) << ssi_max
+                             << " kg/kg" << std::defaultfloat << endl;
+
+                        // WHY is c never above q_Ice? In a cell holding SUPERCOOLED LIQUID the
+                        // air is at liquid saturation, and q_sat(liquid) > q_sat(ice) below
+                        // freezing — that is the whole basis of Wegener-Bergeron-Findeisen. So
+                        // c > q_Ice must hold in every one of those cells, and it holds in none.
+                        // Print the actual numbers rather than infer further.
+                        double cw_c_min = 1e30, cw_c_max = 0.0;
+                        double qi_min = 1e30, qi_max = 0.0, qw_min = 1e30, qw_max = 0.0;
+                        double rat_min = 1e30, rat_max = 0.0;
+                        long long n_s = 0;
+                        #pragma omp parallel for collapse(2) schedule(static) \
+                                reduction(min:cw_c_min,qi_min,qw_min,rat_min) \
+                                reduction(max:cw_c_max,qi_max,qw_max,rat_max) reduction(+:n_s)
+                        for(int i = 0; i < im; i++){
+                            for(int j = 0; j < jm; j++){
+                                for(int k = 0; k < km; k++){
+                                    const double T = t.x[i][j][k] * t_0;
+                                    if(!(T < 273.15 && cloud.x[i][j][k] > 1.0e-6)) continue;
+                                    const double cv = c.x[i][j][k];
+                                    const double qI = IceSchemeCommon::qSatIce(*this, T, i, j, k);
+                                    const double qW = IceSchemeCommon::qSatWater(*this, T, i, j, k);
+                                    n_s++;
+                                    cw_c_min = std::min(cw_c_min, cv);  cw_c_max = std::max(cw_c_max, cv);
+                                    qi_min   = std::min(qi_min, qI);    qi_max   = std::max(qi_max, qI);
+                                    qw_min   = std::min(qw_min, qW);    qw_max   = std::max(qw_max, qW);
+                                    if(qI > 0.0){ const double r = cv/qI;
+                                        rat_min = std::min(rat_min, r); rat_max = std::max(rat_max, r); }
+                                }
+                            }
+                        }
+                        cout << "            in the " << n_s << " supercooled-liquid cells:"
+                             << std::scientific << std::setprecision(3) << endl;
+                        cout << "               c      " << (n_s?cw_c_min:0.0) << " .. " << cw_c_max << endl;
+                        cout << "               q_Ice  " << (n_s?qi_min:0.0)   << " .. " << qi_max << endl;
+                        cout << "               q_Wat  " << (n_s?qw_min:0.0)   << " .. " << qw_max << endl;
+                        cout << "               c/q_Ice " << (n_s?rat_min:0.0) << " .. " << rat_max
+                             << std::defaultfloat << endl;
                     }
                 }
 
