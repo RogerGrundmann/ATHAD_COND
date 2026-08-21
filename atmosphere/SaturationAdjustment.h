@@ -263,13 +263,61 @@ private:
 
                             double d_q_v = q_v_hyp - q_v_b;
 
-                            if (d_q_v > 0) {
-                                double max_evap = q_c_b + q_i_b;
-                                if (d_q_v > max_evap) d_q_v = max_evap;
-                            }
+                            // ATM_SAT_PHASE_AVAIL=1 — THE AVAILABILITY LIMIT AND THE PHASE
+                            // SPLIT DISAGREE, AND THE DIFFERENCE IS CREATED WATER.
+                            //
+                            // Evaporation is capped at max_evap = q_c_b + q_i_b, which is right:
+                            // a cell cannot evaporate more condensate than it holds. The split
+                            // between the two reservoirs is then made by CND/DEP, which are
+                            // TEMPERATURE weights and know nothing about what is actually there.
+                            // So in a cell holding cloud water and NO ice,
+                            //
+                            //     q_v_b += d_q_v                    vapour gains the whole step
+                            //     q_c_b -= d_q_v*CND                cloud gives up only CND of it
+                            //     q_i_b  = max(0, 0 - d_q_v*DEP)    the ice debit hits an empty
+                            //                                       reservoir and is DISCARDED
+                            //
+                            // The vapour is credited water that no condensate gave up — the
+                            // max(0,...) that looks like a safety guard is where the mass goes.
+                            // And because the step is capped while the cloud is only partly
+                            // drained, the cell is left SUBSATURATED WITH CLOUD STILL IN IT.
+                            //
+                            // That is the state ATHAD_COND's ice census measured immediately
+                            // after this routine: 138008 supercooled-liquid cells with
+                            // c/q_Ice = 0.157 .. 0.9978, never above 1. Every ice source needs
+                            // c > q_Ice, so ice production is starved — max S_i = 0.000000
+                            // exactly — and the cause is here, upstream of the ice scheme.
+                            //
+                            // THE REPAIR: split by what is available, then let the vapour gain
+                            // exactly what the condensate lost. A shortfall in one phase is
+                            // offered to the other rather than discarded, and d_q_v is
+                            // recomputed from the two debits so the three-way budget closes by
+                            // construction. Condensation (d_q_v < 0) is untouched: it ADDS to
+                            // the reservoirs, so there is no availability limit to respect.
+                            //
+                            // Default off; off-branch bit-identical.
+                            static const bool phase_avail = [](){
+                                const char* e = getenv("ATM_SAT_PHASE_AVAIL"); return e && atoi(e) != 0; }();
 
-                            double d_cnd = d_q_v * CND;
-                            double d_dep = d_q_v * DEP;
+                            double d_cnd, d_dep;
+                            if (phase_avail && d_q_v > 0.0) {
+                                const double want_c = d_q_v * CND;
+                                const double want_d = d_q_v * DEP;
+                                d_cnd = std::min(want_c, q_c_b);
+                                d_dep = std::min(want_d, q_i_b);
+                                const double short_c = want_c - d_cnd;
+                                const double short_d = want_d - d_dep;
+                                if (short_c > 0.0) d_dep = std::min(q_i_b, d_dep + short_c);
+                                if (short_d > 0.0) d_cnd = std::min(q_c_b, d_cnd + short_d);
+                                d_q_v = d_cnd + d_dep;      // vapour gains exactly what was lost
+                            } else {
+                                if (d_q_v > 0) {
+                                    double max_evap = q_c_b + q_i_b;
+                                    if (d_q_v > max_evap) d_q_v = max_evap;
+                                }
+                                d_cnd = d_q_v * CND;
+                                d_dep = d_q_v * DEP;
+                            }
 
                             q_v_b += d_q_v;
                             q_c_b  = std::max(0.0, q_c_b - d_cnd);

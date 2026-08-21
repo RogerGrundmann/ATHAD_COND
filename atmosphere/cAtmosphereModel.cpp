@@ -103,6 +103,156 @@ cAtmosphereModel::~cAtmosphereModel(){
 /*
 *
 */
+// ATM_ICE_CENSUS=1. Free function so it can be called at MORE THAN ONE POINT in the
+// moist sequence, because where it is sampled decides what it means: the ice scheme
+// reads c and q_Ice immediately after SaturationAdjustment, so a census taken after
+// the ice scheme AND MoistConvection measures a different state than the gates saw.
+static void iceCensusFn(cAtmosphereModel& m, const char* where)
+{
+// ATM_ICE_CENSUS=1 — IS THE ICE BRANCH DEAD, AND IF SO WHY?
+//
+// COND's diagnostics show cloud ice and snow existing at 63 km while max S_i is
+// 0.0 and min S_i is -1.0, i.e. ice is only ever DESTROYED — no production term
+// fires. The ice production gates are t_nuc = 267.15 K, t_d = 248.15 K,
+// t_hn = 236.15 K and t_r_frz = 271.15 K.
+//
+// I CALLED THOSE "ABSOLUTE EARTH TEMPERATURES", AND THAT NEEDS TESTING RATHER
+// THAN ASSERTING. They are properties of WATER, not of Earth: water freezes near
+// 273 K and supercooled droplets nucleate homogeneously near -37 C whatever
+// planet they are on, and the pressure correction is negligible here (ice Ih's
+// Clapeyron slope gives -0.44 K at 60 bar). So the gates may be perfectly
+// correct, and the branch may be dead for a PHYSICAL reason: COND is a 513 K sea
+// under 60 bar, where the saturation temperature is ~549 K, so its clouds
+// condense hundreds of kelvin ABOVE freezing and legitimately cannot glaciate.
+//
+// The two readings are distinguishable by one question: IS THERE CLOUD WATER IN
+// COLD AIR? If cloud water exists below 273 K and the ice terms still do not
+// fire, the gates or their guards are at fault. If cloud water only ever exists
+// in air far too warm, the gates are right and there is nothing to repair —
+// COND is simply a warm-rain planet.
+//
+// Print-only, default off; reads fields and writes none.
+{
+    static const bool ice_census = [](){
+        const char* e = getenv("ATM_ICE_CENSUS"); return e && atoi(e) != 0; }();
+    if(ice_census){
+        constexpr double q_thr = 1.0e-6;       // kg/kg, "cloud is present"
+        double T_cw_min = 1.0e30, T_cw_max = 0.0;
+        double T_ci_min = 1.0e30, T_ci_max = 0.0;
+        long long n_cw = 0, n_cw_sub273 = 0, n_cw_sub236 = 0;
+        long long n_ci = 0, n_cold = 0, n_cells = 0;
+        #pragma omp parallel for collapse(2) schedule(static) \
+                reduction(min:T_cw_min,T_ci_min) reduction(max:T_cw_max,T_ci_max) \
+                reduction(+:n_cw,n_cw_sub273,n_cw_sub236,n_ci,n_cold,n_cells)
+        for(int i = 0; i < m.im; i++){
+            for(int j = 0; j < m.jm; j++){
+                for(int k = 0; k < m.km; k++){
+                    const double T  = m.t.x[i][j][k] * m.t_0;
+                    const double cw = m.cloud.x[i][j][k];
+                    const double ci = m.ice.x[i][j][k];
+                    n_cells++;
+                    if(T < 273.15) n_cold++;
+                    if(cw > q_thr){
+                        n_cw++;
+                        T_cw_min = std::min(T_cw_min, T);
+                        T_cw_max = std::max(T_cw_max, T);
+                        if(T < 273.15) n_cw_sub273++;
+                        if(T < 236.15) n_cw_sub236++;
+                    }
+                    if(ci > q_thr){
+                        n_ci++;
+                        T_ci_min = std::min(T_ci_min, T);
+                        T_ci_max = std::max(T_ci_max, T);
+                    }
+                }
+            }
+        }
+        cout << "      AGCM: ice census [" << where << "] — cells " << n_cells
+             << ",  T < 273.15 K in " << n_cold << endl;
+        cout << "            cloud water in " << n_cw << " cells, T range "
+             << std::fixed << std::setprecision(1)
+             << (n_cw ? T_cw_min : 0.0) << " .. " << (n_cw ? T_cw_max : 0.0)
+             << " K;  of these " << n_cw_sub273 << " below 273.15 and "
+             << n_cw_sub236 << " below 236.15" << endl;
+        cout << "            cloud ice   in " << n_ci << " cells, T range "
+             << (n_ci ? T_ci_min : 0.0) << " .. " << (n_ci ? T_ci_max : 0.0)
+             << " K" << std::defaultfloat << endl;
+
+        // CAN S_i_dep FIRE AT ALL? It is the only ice source left once
+        // S_c_frz's 236.15 K gate is shown unreachable and S_nuc is gated on
+        // ice == 0. It needs BOTH
+        //     N_i > 0        <=>  236.15 < T <= 273.15   (depositionThrottle)
+        //     c > q_Ice            vapour supersaturated over ice
+        // so counting the overlap decides whether ice production is blocked by
+        // geometry (no cells satisfy both) or by magnitude (cells qualify but
+        // the sinks win). Those call for different repairs, and max S_i =
+        // 0.000000 exactly does not distinguish them.
+        long long n_window = 0, n_ssi = 0, n_both = 0;
+        double ssi_max = 0.0;
+        #pragma omp parallel for collapse(2) schedule(static) \
+                reduction(+:n_window,n_ssi,n_both) reduction(max:ssi_max)
+        for(int i = 0; i < m.im; i++){
+            for(int j = 0; j < m.jm; j++){
+                for(int k = 0; k < m.km; k++){
+                    const double T = m.t.x[i][j][k] * m.t_0;
+                    const bool in_win = (T <= 273.15 && T > 236.15);
+                    const double qI = IceSchemeCommon::qSatIce(m, T, i, j, k);
+                    const double ss = m.c.x[i][j][k] - qI;
+                    if(in_win) n_window++;
+                    if(ss > 0.0) n_ssi++;
+                    if(in_win && ss > 0.0){ n_both++; ssi_max = std::max(ssi_max, ss); }
+                }
+            }
+        }
+        cout << "            S_i_dep gate: N_i window (236.15 < T <= 273.15) "
+             << n_window << " cells,  c > q_Ice " << n_ssi
+             << " cells,  BOTH " << n_both << endl;
+        cout << "            max (c - q_Ice) inside the window = "
+             << std::scientific << std::setprecision(3) << ssi_max
+             << " kg/kg" << std::defaultfloat << endl;
+
+        // WHY is c never above q_Ice? In a cell holding SUPERCOOLED LIQUID the
+        // air is at liquid saturation, and q_sat(liquid) > q_sat(ice) below
+        // freezing — that is the whole basis of Wegener-Bergeron-Findeisen. So
+        // c > q_Ice must hold in every one of those cells, and it holds in none.
+        // Print the actual numbers rather than infer further.
+        double cw_c_min = 1e30, cw_c_max = 0.0;
+        double qi_min = 1e30, qi_max = 0.0, qw_min = 1e30, qw_max = 0.0;
+        double rat_min = 1e30, rat_max = 0.0;
+        long long n_s = 0;
+        #pragma omp parallel for collapse(2) schedule(static) \
+                reduction(min:cw_c_min,qi_min,qw_min,rat_min) \
+                reduction(max:cw_c_max,qi_max,qw_max,rat_max) reduction(+:n_s)
+        for(int i = 0; i < m.im; i++){
+            for(int j = 0; j < m.jm; j++){
+                for(int k = 0; k < m.km; k++){
+                    const double T = m.t.x[i][j][k] * m.t_0;
+                    if(!(T < 273.15 && m.cloud.x[i][j][k] > 1.0e-6)) continue;
+                    const double cv = m.c.x[i][j][k];
+                    const double qI = IceSchemeCommon::qSatIce(m, T, i, j, k);
+                    const double qW = IceSchemeCommon::qSatWater(m, T, i, j, k);
+                    n_s++;
+                    cw_c_min = std::min(cw_c_min, cv);  cw_c_max = std::max(cw_c_max, cv);
+                    qi_min   = std::min(qi_min, qI);    qi_max   = std::max(qi_max, qI);
+                    qw_min   = std::min(qw_min, qW);    qw_max   = std::max(qw_max, qW);
+                    if(qI > 0.0){ const double r = cv/qI;
+                        rat_min = std::min(rat_min, r); rat_max = std::max(rat_max, r); }
+                }
+            }
+        }
+        cout << "            in the " << n_s << " supercooled-liquid cells:"
+             << std::scientific << std::setprecision(3) << endl;
+        cout << "               c      " << (n_s?cw_c_min:0.0) << " .. " << cw_c_max << endl;
+        cout << "               q_Ice  " << (n_s?qi_min:0.0)   << " .. " << qi_max << endl;
+        cout << "               q_Wat  " << (n_s?qw_min:0.0)   << " .. " << qw_max << endl;
+        cout << "               c/q_Ice " << (n_s?rat_min:0.0) << " .. " << rat_max
+             << std::defaultfloat << endl;
+    }
+}
+}
+/*
+*
+*/
 // THE SKIN TEMPERATURE OF A GREY ATMOSPHERE IS NOT ITS EFFECTIVE TEMPERATURE.
 //
 // Ported from ATHAD, README item 67 there. Both sites that set t_skin — the startup estimate
@@ -1427,6 +1577,13 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                 ThermoAtm(*this).waterBudget(iter_n % diagnosticStride() == 0, "post-RK4");
 
                 SaturationAdjustment(*this).run();                      // based on the initial distribution, recomputation of the cloud water and cloud ice formation in case of saturated water vapour detected
+
+                // Sampled HERE as well as after the ice scheme, because this is the state the
+                // ice gates actually see: the scheme reads c and q_Ice on the next line but one.
+                // If the subsaturated cloud is already present at this point, SaturationAdjustment
+                // is failing to clear it; if it appears only in the later census, the ice scheme
+                // or MoistConvection is creating it.
+                iceCensusFn(*this, "post SaturationAdjustment, pre ice scheme");
                 // Temperature 2Δt de-checkerboard. c/cloud/ice receive the same stride-2 moist
                 // forcing AND damp_wiggles and stay stable; t got the forcing but NO damping —
                 // the only prognostic without it — letting an undamped 2Δt computational mode
@@ -1569,146 +1726,7 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                     }
                 }
 
-                // ATM_ICE_CENSUS=1 — IS THE ICE BRANCH DEAD, AND IF SO WHY?
-                //
-                // COND's diagnostics show cloud ice and snow existing at 63 km while max S_i is
-                // 0.0 and min S_i is -1.0, i.e. ice is only ever DESTROYED — no production term
-                // fires. The ice production gates are t_nuc = 267.15 K, t_d = 248.15 K,
-                // t_hn = 236.15 K and t_r_frz = 271.15 K.
-                //
-                // I CALLED THOSE "ABSOLUTE EARTH TEMPERATURES", AND THAT NEEDS TESTING RATHER
-                // THAN ASSERTING. They are properties of WATER, not of Earth: water freezes near
-                // 273 K and supercooled droplets nucleate homogeneously near -37 C whatever
-                // planet they are on, and the pressure correction is negligible here (ice Ih's
-                // Clapeyron slope gives -0.44 K at 60 bar). So the gates may be perfectly
-                // correct, and the branch may be dead for a PHYSICAL reason: COND is a 513 K sea
-                // under 60 bar, where the saturation temperature is ~549 K, so its clouds
-                // condense hundreds of kelvin ABOVE freezing and legitimately cannot glaciate.
-                //
-                // The two readings are distinguishable by one question: IS THERE CLOUD WATER IN
-                // COLD AIR? If cloud water exists below 273 K and the ice terms still do not
-                // fire, the gates or their guards are at fault. If cloud water only ever exists
-                // in air far too warm, the gates are right and there is nothing to repair —
-                // COND is simply a warm-rain planet.
-                //
-                // Print-only, default off; reads fields and writes none.
-                {
-                    static const bool ice_census = [](){
-                        const char* e = getenv("ATM_ICE_CENSUS"); return e && atoi(e) != 0; }();
-                    if(ice_census){
-                        constexpr double q_thr = 1.0e-6;       // kg/kg, "cloud is present"
-                        double T_cw_min = 1.0e30, T_cw_max = 0.0;
-                        double T_ci_min = 1.0e30, T_ci_max = 0.0;
-                        long long n_cw = 0, n_cw_sub273 = 0, n_cw_sub236 = 0;
-                        long long n_ci = 0, n_cold = 0, n_cells = 0;
-                        #pragma omp parallel for collapse(2) schedule(static) \
-                                reduction(min:T_cw_min,T_ci_min) reduction(max:T_cw_max,T_ci_max) \
-                                reduction(+:n_cw,n_cw_sub273,n_cw_sub236,n_ci,n_cold,n_cells)
-                        for(int i = 0; i < im; i++){
-                            for(int j = 0; j < jm; j++){
-                                for(int k = 0; k < km; k++){
-                                    const double T  = t.x[i][j][k] * t_0;
-                                    const double cw = cloud.x[i][j][k];
-                                    const double ci = ice.x[i][j][k];
-                                    n_cells++;
-                                    if(T < 273.15) n_cold++;
-                                    if(cw > q_thr){
-                                        n_cw++;
-                                        T_cw_min = std::min(T_cw_min, T);
-                                        T_cw_max = std::max(T_cw_max, T);
-                                        if(T < 273.15) n_cw_sub273++;
-                                        if(T < 236.15) n_cw_sub236++;
-                                    }
-                                    if(ci > q_thr){
-                                        n_ci++;
-                                        T_ci_min = std::min(T_ci_min, T);
-                                        T_ci_max = std::max(T_ci_max, T);
-                                    }
-                                }
-                            }
-                        }
-                        cout << "      AGCM: ice census — cells " << n_cells
-                             << ",  T < 273.15 K in " << n_cold << endl;
-                        cout << "            cloud water in " << n_cw << " cells, T range "
-                             << std::fixed << std::setprecision(1)
-                             << (n_cw ? T_cw_min : 0.0) << " .. " << (n_cw ? T_cw_max : 0.0)
-                             << " K;  of these " << n_cw_sub273 << " below 273.15 and "
-                             << n_cw_sub236 << " below 236.15" << endl;
-                        cout << "            cloud ice   in " << n_ci << " cells, T range "
-                             << (n_ci ? T_ci_min : 0.0) << " .. " << (n_ci ? T_ci_max : 0.0)
-                             << " K" << std::defaultfloat << endl;
-
-                        // CAN S_i_dep FIRE AT ALL? It is the only ice source left once
-                        // S_c_frz's 236.15 K gate is shown unreachable and S_nuc is gated on
-                        // ice == 0. It needs BOTH
-                        //     N_i > 0        <=>  236.15 < T <= 273.15   (depositionThrottle)
-                        //     c > q_Ice            vapour supersaturated over ice
-                        // so counting the overlap decides whether ice production is blocked by
-                        // geometry (no cells satisfy both) or by magnitude (cells qualify but
-                        // the sinks win). Those call for different repairs, and max S_i =
-                        // 0.000000 exactly does not distinguish them.
-                        long long n_window = 0, n_ssi = 0, n_both = 0;
-                        double ssi_max = 0.0;
-                        #pragma omp parallel for collapse(2) schedule(static) \
-                                reduction(+:n_window,n_ssi,n_both) reduction(max:ssi_max)
-                        for(int i = 0; i < im; i++){
-                            for(int j = 0; j < jm; j++){
-                                for(int k = 0; k < km; k++){
-                                    const double T = t.x[i][j][k] * t_0;
-                                    const bool in_win = (T <= 273.15 && T > 236.15);
-                                    const double qI = IceSchemeCommon::qSatIce(*this, T, i, j, k);
-                                    const double ss = c.x[i][j][k] - qI;
-                                    if(in_win) n_window++;
-                                    if(ss > 0.0) n_ssi++;
-                                    if(in_win && ss > 0.0){ n_both++; ssi_max = std::max(ssi_max, ss); }
-                                }
-                            }
-                        }
-                        cout << "            S_i_dep gate: N_i window (236.15 < T <= 273.15) "
-                             << n_window << " cells,  c > q_Ice " << n_ssi
-                             << " cells,  BOTH " << n_both << endl;
-                        cout << "            max (c - q_Ice) inside the window = "
-                             << std::scientific << std::setprecision(3) << ssi_max
-                             << " kg/kg" << std::defaultfloat << endl;
-
-                        // WHY is c never above q_Ice? In a cell holding SUPERCOOLED LIQUID the
-                        // air is at liquid saturation, and q_sat(liquid) > q_sat(ice) below
-                        // freezing — that is the whole basis of Wegener-Bergeron-Findeisen. So
-                        // c > q_Ice must hold in every one of those cells, and it holds in none.
-                        // Print the actual numbers rather than infer further.
-                        double cw_c_min = 1e30, cw_c_max = 0.0;
-                        double qi_min = 1e30, qi_max = 0.0, qw_min = 1e30, qw_max = 0.0;
-                        double rat_min = 1e30, rat_max = 0.0;
-                        long long n_s = 0;
-                        #pragma omp parallel for collapse(2) schedule(static) \
-                                reduction(min:cw_c_min,qi_min,qw_min,rat_min) \
-                                reduction(max:cw_c_max,qi_max,qw_max,rat_max) reduction(+:n_s)
-                        for(int i = 0; i < im; i++){
-                            for(int j = 0; j < jm; j++){
-                                for(int k = 0; k < km; k++){
-                                    const double T = t.x[i][j][k] * t_0;
-                                    if(!(T < 273.15 && cloud.x[i][j][k] > 1.0e-6)) continue;
-                                    const double cv = c.x[i][j][k];
-                                    const double qI = IceSchemeCommon::qSatIce(*this, T, i, j, k);
-                                    const double qW = IceSchemeCommon::qSatWater(*this, T, i, j, k);
-                                    n_s++;
-                                    cw_c_min = std::min(cw_c_min, cv);  cw_c_max = std::max(cw_c_max, cv);
-                                    qi_min   = std::min(qi_min, qI);    qi_max   = std::max(qi_max, qI);
-                                    qw_min   = std::min(qw_min, qW);    qw_max   = std::max(qw_max, qW);
-                                    if(qI > 0.0){ const double r = cv/qI;
-                                        rat_min = std::min(rat_min, r); rat_max = std::max(rat_max, r); }
-                                }
-                            }
-                        }
-                        cout << "            in the " << n_s << " supercooled-liquid cells:"
-                             << std::scientific << std::setprecision(3) << endl;
-                        cout << "               c      " << (n_s?cw_c_min:0.0) << " .. " << cw_c_max << endl;
-                        cout << "               q_Ice  " << (n_s?qi_min:0.0)   << " .. " << qi_max << endl;
-                        cout << "               q_Wat  " << (n_s?qw_min:0.0)   << " .. " << qw_max << endl;
-                        cout << "               c/q_Ice " << (n_s?rat_min:0.0) << " .. " << rat_max
-                             << std::defaultfloat << endl;
-                    }
-                }
+                iceCensusFn(*this, "post ice scheme + MoistConvection");
 
                 // Physical caps on the microphysics source terms.
                 // The ice-scheme S-terms feed rhs_t (latent heat: S_c,S_r,S_i,S_s,S_g)
