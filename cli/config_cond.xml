@@ -15,7 +15,7 @@
         <use_earthbyte_reconstruction>false</use_earthbyte_reconstruction>  <!-- control whether use earthbyte method to recontruct grids(bool) -->
         <use_NASA_velocity>false</use_NASA_velocity>  <!-- if use NASA velocity to initialise velocity(bool) -->
         <use_NASA_temperature>true</use_NASA_temperature>  <!-- if use NASA temperature to initialise surface temperature(bool) -->
-        <CategoryIceScheme>2</CategoryIceScheme>  <!-- number chooses Two(2)-Category Ice Scheme with rain, snow(int) -->
+        <CategoryIceScheme>3</CategoryIceScheme>  <!-- number chooses Three(3)-Category Ice Scheme with rain, snow and graupel(int) -->
         <p_0>60000.0</p_0>  <!-- pressure at sea level in hPa(double) -->
         <t_0>273.15</t_0>  <!-- temperature in K compare to 0°C(double) -->
         <t_surf_equator>513.15</t_surf_equator>  <!-- ATHAD_COND: prescribed sea-surface temperature at the equator in K(double) -->

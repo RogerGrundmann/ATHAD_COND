@@ -1488,21 +1488,86 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                 // bit-level is_finite_safe (std::min/max are unreliable under -ffast-math).
                 {
                     constexpr double S_max = 1.0e-3;                     // [(kg/kg)/s]
+
+                    // ATM_CAP_CENSUS=1 — WHICH cells does this cap actually clip?
+                    //
+                    // The comment above justifies S_max by "the steep Andes (~50S,
+                    // 1/sin^2(theta)-amplified orographic ascent)". Invariant 1 says this family
+                    // has NO topography — is_land() is false at every point — so the orographic
+                    // half of that mechanism cannot occur here. The 1/sin^2(theta) half still
+                    // can: it diverges at the poles, which is where every capped extremum was
+                    // reported (90N 0E, all four of S_v/S_r/S_s/S_g, in BOTH forks).
+                    //
+                    // So there are two competing readings and they call for opposite repairs:
+                    //   (a) the rates are genuinely too large everywhere — Earth microphysics
+                    //       constants on a 33-40x denser atmosphere with up to 49x the cloud
+                    //       water — and the constants need density scaling;
+                    //   (b) the cap is catching a POLAR GRID SINGULARITY, a coordinate artefact
+                    //       of 1/sin^2(theta) as sin(theta) -> 0, and the constants are innocent.
+                    //
+                    // A max and its location cannot separate these; a census can. This counts
+                    // clipped cells by |latitude| band. Print-only, default off, and it touches
+                    // no field — it cannot change a result.
+                    static const bool cap_census = [](){
+                        const char* e = getenv("ATM_CAP_CENSUS"); return e && atoi(e) != 0; }();
+
+                    long long clipped[4] = {0,0,0,0};   // |lat| >=85, 60-85, 30-60, <30
+                    long long total_cells = 0;
+
                     auto cap_S = [&](Array& S){
-                        #pragma omp parallel for collapse(2) schedule(static)
+                        long long c0=0, c1=0, c2=0, c3=0, tot=0;
+                        #pragma omp parallel for collapse(2) schedule(static) \
+                                reduction(+:c0,c1,c2,c3,tot)
                         for(int i = 0; i < im; i++){
                             for(int j = 0; j < jm; j++){
                                 for(int k = 0; k < km; k++){
                                     double v = S.x[i][j][k];
-                                    if(!AtomUtils::is_finite_safe(v)) S.x[i][j][k] = 0.0;
-                                    else if(v >  S_max)               S.x[i][j][k] =  S_max;
-                                    else if(v < -S_max)               S.x[i][j][k] = -S_max;
+                                    bool hit = false;
+                                    if(!AtomUtils::is_finite_safe(v)){ S.x[i][j][k] = 0.0; hit = true; }
+                                    else if(v >  S_max){ S.x[i][j][k] =  S_max; hit = true; }
+                                    else if(v < -S_max){ S.x[i][j][k] = -S_max; hit = true; }
+                                    if(cap_census){
+                                        tot++;
+                                        if(hit){
+                                            // j runs 0 (90N) .. jm-1 (90S), so |lat| = |90 - j*180/(jm-1)|
+                                            const double lat = 90.0 - j * 180.0 / (double)(jm - 1);
+                                            const double a = std::fabs(lat);
+                                            if(a >= 85.0)      c0++;
+                                            else if(a >= 60.0) c1++;
+                                            else if(a >= 30.0) c2++;
+                                            else               c3++;
+                                        }
+                                    }
                                 }
                             }
                         }
+                        clipped[0]+=c0; clipped[1]+=c1; clipped[2]+=c2; clipped[3]+=c3;
+                        total_cells += tot;
                     };
                     cap_S(S_v); cap_S(S_c); cap_S(S_i); cap_S(S_r);
                     cap_S(S_s); cap_S(S_g); cap_S(S_c_c);
+
+                    if(cap_census){
+                        const long long tot_clip = clipped[0]+clipped[1]+clipped[2]+clipped[3];
+                        // Cells per band, so a count can be read against how much sky the band is.
+                        long long band_cells[4] = {0,0,0,0};
+                        for(int j = 0; j < jm; j++){
+                            const double a = std::fabs(90.0 - j * 180.0 / (double)(jm - 1));
+                            const int b = (a >= 85.0) ? 0 : (a >= 60.0) ? 1 : (a >= 30.0) ? 2 : 3;
+                            band_cells[b] += (long long)im * km * 7;   // 7 arrays
+                        }
+                        cout << "      AGCM: S_max census — " << tot_clip << " of " << total_cells
+                             << " clipped (" << std::fixed << std::setprecision(4)
+                             << (total_cells ? 100.0*tot_clip/total_cells : 0.0) << " %)" << endl;
+                        const char* nm[4] = {"|lat|>=85", "60-85   ", "30-60   ", "<30     "};
+                        for(int b = 0; b < 4; b++)
+                            cout << "            " << nm[b] << " : " << clipped[b]
+                                 << " of " << band_cells[b] << "  ("
+                                 << std::setprecision(4)
+                                 << (band_cells[b] ? 100.0*clipped[b]/band_cells[b] : 0.0)
+                                 << " % of band)" << endl;
+                        cout << std::defaultfloat;
+                    }
                 }
 
                 // Microphysics state clamp.  ThermoAtm::densities computes

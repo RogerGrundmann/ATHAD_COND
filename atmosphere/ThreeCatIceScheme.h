@@ -12,6 +12,52 @@
 #include <cstdio>
 #include <vector>
 
+// ----------------------------------------------------------------------------------
+// THE PRECIPITATION CONVERGENCE PROBE WAS A BARE LEVEL INDEX.
+//
+// The iteration below sweeps the column top-down up to iter_prec_end (20) times and decides
+// it has converged when the rain flux at ONE level stops changing:
+//
+//     Rain_check  = P_rain.x[23]
+//     ... sweep ...
+//     if(|P_rain.x[23] - Rain_check| * conv_mmd <= 1e-3) break;
+//
+// 23 is an index, not a height, so where it lands depends entirely on the grid:
+//
+//     ATHAD        im=41, L_atm 15719  ->  72.5 km
+//     COND/PERID   im=61, L_atm  6287  ->  13.6 km
+//     COND/PERID   im=41, L_atm  6287  ->  29.0 km
+//
+// COND's convective column tops at 20-28 km, so at im=61 the probe is inside the rain-bearing
+// layer and the test measures something real; at im=41 it sits ABOVE it, where P_rain is ~0
+// always. The difference is then ~0 on the FIRST sweep -- not because the column converged but
+// because nothing was ever there to change -- so the 20-sweep iteration silently collapses to
+// one and the precipitation column is used unconverged. ATHAD already runs it at 72.5 km, i.e.
+// degenerate today, though only past moist_phys_start_iter = 300.
+//
+// NEITHER VALUE IS RIGHT. 13.6 km is not a physically motivated probe height either; it is an
+// accident of im=61 that happens to land where the field varies. The correct probe is the
+// SURFACE flux P_rain.x[0]: it is the accumulated result of the whole downward sweep, so it
+// reflects convergence of the entire column rather than of one layer; it is what the scheme
+// already normalises by (P_rain_0 below); it is what the model reports; and index 0 is the
+// surface on every grid, so it is grid-independent by construction and drops out of the im and
+// zeta decisions entirely.
+//
+// ATM_PRECIP_PROBE=1 selects the surface probe. DEFAULT OFF (legacy bare 23) so the four-arm
+// im x probe measurement can separate the resolution effect from the probe effect instead of
+// letting one hide inside the other. Off-branch is bit-identical.
+//
+// NOTE: the same bare 23 is still present in ZeroCatIceScheme.h (2 sites) and
+// OneCatIceScheme.h (4 sites). Neither is the configured scheme, so both are latent rather
+// than live -- checked in the control flow, not inferred from the grep.
+static inline int precipProbeLevel(const cAtmosphereModel& m)
+{
+    static const bool surface_probe = [](){
+        const char* e = getenv("ATM_PRECIP_PROBE"); return e && atoi(e) != 0; }();
+    return surface_probe ? 0 : std::min(23, m.im - 1);
+}
+
+
 using namespace AtomUtils;
 
 
@@ -173,11 +219,11 @@ private:
         for(int j = 1; j < m.jm - 1; j++){
             for(int k = 1; k < m.km - 1; k++){
 
-                m.P_rain.x[23][j][k] = 0.0;
+                m.P_rain.x[precipProbeLevel(m)][j][k] = 0.0;
 
                 for(int iter_prec = 1; iter_prec <= iter_prec_end; iter_prec++){
 
-                    double Rain_check = m.P_rain.x[23][j][k];
+                    double Rain_check = m.P_rain.x[precipProbeLevel(m)][j][k];
 
                     m.P_rain.x[m.im-1][j][k] = 0.0;
                     m.P_snow.x[m.im-1][j][k] = 0.0;
@@ -419,7 +465,7 @@ private:
 
                     } // end i
 
-                    double P_rain_diff = fabs(m.P_rain.x[23][j][k] - Rain_check) * conv_mmd;
+                    double P_rain_diff = fabs(m.P_rain.x[precipProbeLevel(m)][j][k] - Rain_check) * conv_mmd;
                     if(P_rain_diff <= 1.0e-3) break;
 
                 } // end iter_prec

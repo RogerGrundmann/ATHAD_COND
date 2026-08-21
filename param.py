@@ -72,8 +72,8 @@ def main():
 
 
 
-#            ('CategoryIceScheme', 'number chooses Three(3)-Category Ice Scheme with rain, snow and graupel', 'int', 3),
-            ('CategoryIceScheme', 'number chooses Two(2)-Category Ice Scheme with rain, snow', 'int', 2),
+            ('CategoryIceScheme', 'number chooses Three(3)-Category Ice Scheme with rain, snow and graupel', 'int', 3),
+#            ('CategoryIceScheme', 'number chooses Two(2)-Category Ice Scheme with rain, snow', 'int', 2),
 #            ('CategoryIceScheme', 'number chooses One(1)-Category Ice Scheme with rain, snow', 'int', 1),
 #            ('CategoryIceScheme', 'number chooses Zero(0)-Category Ice Scheme with rain (Warm Rain Scheme)', 'int', 0),
 #            ('CategoryIceScheme', 'number chooses no scheme(-1) no precipitation', 'int', -1),
