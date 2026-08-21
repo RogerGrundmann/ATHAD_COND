@@ -249,6 +249,14 @@ private:
                         // and S_s_rim ∝ Snow then amplified P_snow geometrically down the column
                         // to overflow (the ThreeCat NaN blow-up). Flooring at P_norm_floor bounds
                         // the normalized ratios; the flux cap below guarantees finiteness.
+                        // Hoisted: r_h_i and the fall-speed knob are needed by the
+                        // Marshall-Palmer inversion below as well as by the residence times
+                        // further down, so both are declared once here.
+                        double r_h_i = m.r_humid.x[i][j][k];
+                        static const bool fall_rho = [](){
+                            const char* e = getenv("ATM_FALLSPEED_RHO"); return e && atoi(e) != 0; }();
+                        constexpr double rho_ref_fall = 1.2041;      // kg/m3, Earth surface air
+
                         // ATM_PRECIP_DIMENSIONAL=1 — THE FLUX IS NORMALISED TWICE.
                         //
                         // These power laws invert the Marshall-Palmer flux/content relation. For
@@ -301,14 +309,54 @@ private:
                         double Rain_16  = (Rain > 0.0) ? pow(Rain, 1.0/6.0)  : 0.0;
                         double Rain_49  = (Rain > 0.0) ? pow(Rain, 4.0/9.0)  : 0.0;
 
-                        double r_q_r = A_r * B_rad_neg89 * Rain_89;
-                        double r_q_s = A_s * B_s_neg1213 * ((Snow > 0.0)    ? pow(Snow,    12.0/13.0) : 0.0);
-                        double r_q_g = A_g * B_g_neg1213 * ((Graupel > 0.0) ? pow(Graupel, 12.0/13.0) : 0.0);
+                        // ATM_FALLSPEED_RHO=1 — THE FALL SPEEDS THAT REACH THE FLUX.
+                        //
+                        // B_rad = rho_w*pi*N_r_0*v_r_0*Gamma(4.5)/Gamma(4), and B_s, B_g likewise,
+                        // carry v_r_0 = 4.9, v_s_0 = 130.0, v_g_0 = 442.0 — the Marshall-Palmer
+                        // fall-speed prefactors. THESE, not the 1.6/0.96 m/s in the residence
+                        // times above, are the fall speeds with a path to the precipitation flux:
+                        // they set the flux<->content inversion q = A*(P/B)^(8/9) that every
+                        // collection and deposition term is built on.
+                        //
+                        // They are computed ONCE outside the cell loop, as const doubles at
+                        // function scope, so they cannot vary with air density at all. That is an
+                        // Earth assumption baked into the SHAPE of the code rather than into a
+                        // literal — the sibling of item 39's exp_rm, where the defect was the
+                        // structure and not the number.
+                        //
+                        // Terminal velocity balances gravity against drag, so v_t ~ 1/sqrt(rho_a)
+                        // for a given particle. Writing f = sqrt(rho_ref/rho) for that factor,
+                        // B ~ v_0 scales by f, and since B enters only as B^(-8/9) and B^(-12/13)
+                        // the per-cell correction is a clean power of the density ratio:
+                        //
+                        //     B_rad^(-8/9)   -> B_rad^(-8/9)   * (rho/rho_ref)^(4/9)
+                        //     B_s^(-12/13)   -> B_s^(-12/13)   * (rho/rho_ref)^(6/13)
+                        //
+                        // so the precomputed constants survive and cost one pow() per cell.
+                        // COND's air is 39 kg/m3, so f = 0.176 and rain falls 5.7x slower than
+                        // these constants assume; the correction RAISES the derived water content
+                        // for a given flux, because slower particles need more of them.
+                        //
+                        // NO CLAMP HERE, unlike the residence-time branch: this is a smooth power
+                        // of the density ratio with no divergence, and rho is bounded away from 0
+                        // by the guard below.
+                        double Brad89_loc = B_rad_neg89;
+                        double Bs1213_loc = B_s_neg1213;
+                        double Bg1213_loc = B_g_neg1213;
+                        if(fall_rho && r_h_i > 0.0){
+                            const double rr = r_h_i / rho_ref_fall;
+                            Brad89_loc *= pow(rr, 4.0/9.0);
+                            Bs1213_loc *= pow(rr, 6.0/13.0);
+                            Bg1213_loc *= pow(rr, 6.0/13.0);
+                        }
+
+                        double r_q_r = A_r * Brad89_loc * Rain_89;
+                        double r_q_s = A_s * Bs1213_loc * ((Snow > 0.0)    ? pow(Snow,    12.0/13.0) : 0.0);
+                        double r_q_g = A_g * Bg1213_loc * ((Graupel > 0.0) ? pow(Graupel, 12.0/13.0) : 0.0);
 
                         double t_u   = m.t.x[i][j][k] * m.t_0;
                         double p_u   = m.p_stat.x[i][j][k];
                         double p_u_0 = 1e2 * p_u;
-                        double r_h_i = m.r_humid.x[i][j][k];
                         double c_ijk = m.c.x[i][j][k];
                         double cl_i  = m.cloud.x[i][j][k];
                         double ice_i = m.ice.x[i][j][k];
@@ -347,9 +395,6 @@ private:
                         // which is the thin upper air where there is essentially no condensate to
                         // fall; the lower clamp corresponds to rho = 481 kg/m3 and is an inert
                         // guard. Default off; off-branch bit-identical.
-                        static const bool fall_rho = [](){
-                            const char* e = getenv("ATM_FALLSPEED_RHO"); return e && atoi(e) != 0; }();
-                        constexpr double rho_ref_fall = 1.2041;      // kg/m3, Earth surface air
                         double v_fac = 1.0;
                         if(fall_rho && r_h_i > 0.0)
                             v_fac = std::min(1.0, std::max(0.05, std::sqrt(rho_ref_fall / r_h_i)));

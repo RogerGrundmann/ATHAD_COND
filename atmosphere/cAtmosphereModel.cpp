@@ -1569,6 +1569,77 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                     }
                 }
 
+                // ATM_ICE_CENSUS=1 — IS THE ICE BRANCH DEAD, AND IF SO WHY?
+                //
+                // COND's diagnostics show cloud ice and snow existing at 63 km while max S_i is
+                // 0.0 and min S_i is -1.0, i.e. ice is only ever DESTROYED — no production term
+                // fires. The ice production gates are t_nuc = 267.15 K, t_d = 248.15 K,
+                // t_hn = 236.15 K and t_r_frz = 271.15 K.
+                //
+                // I CALLED THOSE "ABSOLUTE EARTH TEMPERATURES", AND THAT NEEDS TESTING RATHER
+                // THAN ASSERTING. They are properties of WATER, not of Earth: water freezes near
+                // 273 K and supercooled droplets nucleate homogeneously near -37 C whatever
+                // planet they are on, and the pressure correction is negligible here (ice Ih's
+                // Clapeyron slope gives -0.44 K at 60 bar). So the gates may be perfectly
+                // correct, and the branch may be dead for a PHYSICAL reason: COND is a 513 K sea
+                // under 60 bar, where the saturation temperature is ~549 K, so its clouds
+                // condense hundreds of kelvin ABOVE freezing and legitimately cannot glaciate.
+                //
+                // The two readings are distinguishable by one question: IS THERE CLOUD WATER IN
+                // COLD AIR? If cloud water exists below 273 K and the ice terms still do not
+                // fire, the gates or their guards are at fault. If cloud water only ever exists
+                // in air far too warm, the gates are right and there is nothing to repair —
+                // COND is simply a warm-rain planet.
+                //
+                // Print-only, default off; reads fields and writes none.
+                {
+                    static const bool ice_census = [](){
+                        const char* e = getenv("ATM_ICE_CENSUS"); return e && atoi(e) != 0; }();
+                    if(ice_census){
+                        constexpr double q_thr = 1.0e-6;       // kg/kg, "cloud is present"
+                        double T_cw_min = 1.0e30, T_cw_max = 0.0;
+                        double T_ci_min = 1.0e30, T_ci_max = 0.0;
+                        long long n_cw = 0, n_cw_sub273 = 0, n_cw_sub236 = 0;
+                        long long n_ci = 0, n_cold = 0, n_cells = 0;
+                        #pragma omp parallel for collapse(2) schedule(static) \
+                                reduction(min:T_cw_min,T_ci_min) reduction(max:T_cw_max,T_ci_max) \
+                                reduction(+:n_cw,n_cw_sub273,n_cw_sub236,n_ci,n_cold,n_cells)
+                        for(int i = 0; i < im; i++){
+                            for(int j = 0; j < jm; j++){
+                                for(int k = 0; k < km; k++){
+                                    const double T  = t.x[i][j][k] * t_0;
+                                    const double cw = cloud.x[i][j][k];
+                                    const double ci = ice.x[i][j][k];
+                                    n_cells++;
+                                    if(T < 273.15) n_cold++;
+                                    if(cw > q_thr){
+                                        n_cw++;
+                                        T_cw_min = std::min(T_cw_min, T);
+                                        T_cw_max = std::max(T_cw_max, T);
+                                        if(T < 273.15) n_cw_sub273++;
+                                        if(T < 236.15) n_cw_sub236++;
+                                    }
+                                    if(ci > q_thr){
+                                        n_ci++;
+                                        T_ci_min = std::min(T_ci_min, T);
+                                        T_ci_max = std::max(T_ci_max, T);
+                                    }
+                                }
+                            }
+                        }
+                        cout << "      AGCM: ice census — cells " << n_cells
+                             << ",  T < 273.15 K in " << n_cold << endl;
+                        cout << "            cloud water in " << n_cw << " cells, T range "
+                             << std::fixed << std::setprecision(1)
+                             << (n_cw ? T_cw_min : 0.0) << " .. " << (n_cw ? T_cw_max : 0.0)
+                             << " K;  of these " << n_cw_sub273 << " below 273.15 and "
+                             << n_cw_sub236 << " below 236.15" << endl;
+                        cout << "            cloud ice   in " << n_ci << " cells, T range "
+                             << (n_ci ? T_ci_min : 0.0) << " .. " << (n_ci ? T_ci_max : 0.0)
+                             << " K" << std::defaultfloat << endl;
+                    }
+                }
+
                 // Physical caps on the microphysics source terms.
                 // The ice-scheme S-terms feed rhs_t (latent heat: S_c,S_r,S_i,S_s,S_g)
                 // and rhs_c (moisture: S_v) UNCAPPED. They depend on c/cloud/ice, so
