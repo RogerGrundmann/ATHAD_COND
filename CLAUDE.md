@@ -147,7 +147,7 @@ is what ATHAD does and is only equivalent when the water field is uniform too.
 | `kappa_N2/CH4/NH3/H2/CO/SO2` | 1e-6 / 3e-3 / 1e-2 / 1e-5 / 1e-4 / 2e-3 m²/kg | ATHAD's values, and they now matter here: Σf_i·κ_i = **1.944e-3**, 1944× the lumped `kappa_bg` = 1e-6 that was exact while the background was pure N₂. Six assumptions of the same standing as the two above |
 | trace-gas mole fractions | 0.014 each (CH₄/NH₃/H₂/CO/SO₂) | ATHAD's numbers, adopted 2026-08-20. **The fractions match, the inventory does not** (1.4 % of 250 bar ≠ 1.4 % of 60 bar), and they push dry CO₂ to 77.4 %, below the quoted 89–95 % |
 | `t_surf_equator` / `t_surf_pole` | 513.15 / 503.15 K | **Prescribed, not solved** |
-| `t_skin` | fixed-point iterate | Currently *sets* the OLR rather than following it |
+| `t_skin` | fixed-point iterate | Currently *sets* the OLR rather than following it. **Its fixed point is `sigma*T^4 = F/2` since 2026-08-21** (ATHAD item 67); it used to be `= F`, which made the budget close by construction. `ATM_SKIN_GREY=0` restores that. Effect size here UNMEASURED |
 | `albedo_cloud` | 0.50 | IS the planetary albedo (0.4997 measured); saturates wherever condensate exists, which is now everywhere |
 | `albedo_surface` | **0.06** | A **water** value since 2026-08-20; it was 0.08 with ATHAD's basaltic-melt justification attached. Clear-sky only, and the cloud bump overwrites it almost everywhere, so its reach is small — measured, not assumed |
 | `omega` | 3.17e-4 (5.5 h day) | Inherited; this epoch is later and slower |
@@ -155,6 +155,27 @@ is what ATHAD does and is only equivalent when the water field is uniform too.
 | `delta_i_c` | 500 s | Bechtold convective timescale, Earth-calibrated. A time, not a pressure — no unit error, and no evidence here to replace it |
 
 ## What the model currently says
+
+> **THE GREY SKIN FACTOR IS IN, AND IT IS ON BY DEFAULT (ported from ATHAD item 67, 2026-08-21).**
+> `t_skin` was solving `sigma*T^4 = F` where `F` = absorbed SW + geothermal. That is the planet's
+> EFFECTIVE EMISSION temperature; the top layer of a grey atmosphere is at `T_eff/2^(1/4)`, because
+> it sees no downward flux and re-emits half of what passes up through it. **The precondition was
+> checked in THIS tree, not assumed**: `SW_abs` appears in exactly one place, `MultiLayerRadiation`'s
+> surface energy balance, and nowhere in the column, so the classical skin result `sigma*T^4 = F/2`
+> is exact here rather than a fit. `MultiLayerRadiation` already contained the right relation twice.
+>
+> **Consequence: `t_skin` is now ~2^(1/4) colder, and the OLR follows it down.** Because the reported
+> OLR descends onto `sigma*t_skin^4`, setting `sigma*t_skin^4 = F` made "OLR -> absorbed" an
+> identity. In ATHAD, correcting it turned a -1.41 W/m2 imbalance at 200 iterations into **+123.76**.
+>
+> **EVERY OLR AND IMBALANCE FIGURE RECORDED BELOW PREDATES THIS AND WAS MEASURED WITH THE FACTOR
+> OFF.** None is retracted -- they are correct measurements of a branch still reachable with
+> `ATM_SKIN_GREY=0` -- but none describes the shipped model.
+>
+> **THE SIZE OF THE EFFECT IN THIS TREE IS NOT MEASURED.** ATHAD is 250 bar and this is a different
+> column; the defect and its repair transfer, the magnitude does not. Run the A/B before quoting a
+> number here.
+
 
 Measured; see the README for the full items.
 

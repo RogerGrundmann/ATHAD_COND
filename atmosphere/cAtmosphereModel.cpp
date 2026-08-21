@@ -99,6 +99,57 @@ cAtmosphereModel::~cAtmosphereModel(){
 }
  
 #include "cAtmosphereDefaults.cpp.inc"
+
+/*
+*
+*/
+// THE SKIN TEMPERATURE OF A GREY ATMOSPHERE IS NOT ITS EFFECTIVE TEMPERATURE.
+//
+// Ported from ATHAD, README item 67 there. Both sites that set t_skin — the startup estimate
+// in the composition printout and the fixed-point relaxation in updateSkinTemperature() —
+// used to solve
+//
+//     sigma * t_skin^4 = absorbed SW + geothermal = F                             (WRONG)
+//
+// which is the definition of the EFFECTIVE EMISSION temperature T_eff: the temperature a
+// black body would need to radiate the planet's whole budget. It is not the temperature of
+// the top of the column. The optically thin top sees no downward flux at all, so it absorbs
+// only the upward stream and re-emits half of it up and half of it down:
+//
+//     sigma * T_skin^4 = F / 2   ->   T_skin = T_eff / 2^(1/4)                    (RIGHT)
+//
+// THE PRECONDITION WAS CHECKED IN THIS TREE, NOT ASSUMED. The grey skin result is exact only
+// if no shortwave is absorbed inside the column. Here SW_abs appears in exactly one place,
+// MultiLayerRadiation's surface energy balance, and nowhere in the column — so the atmosphere
+// is a pure grey long-wave medium over a shortwave-heated surface, the classical skin problem,
+// and F/2 is the exact answer rather than a fit.
+//
+// This model already contains that result, twice, in the file the prescription overwrites.
+// MultiLayerRadiation's flux sweep reduces at the top, where dn -> 0, to sigma*T^4 = up/2 —
+// and its comment says so in as many words. The direct solver's validated eps -> 0 limit is
+// T_i = T_s/2^(1/4), the same factor. So the radiation solver and the prescription that
+// overwrites its answer disagree by 2^(1/4), and the prescription wins every iteration.
+//
+// WHY IT MATTERS MORE THAN 2^(1/4) SUGGESTS. densities() sets the whole upper column to
+// max(t_skin, T_ad), so the lid is exactly t_skin and the reported OLR descends onto
+// sigma*t_skin^4. Choosing t_skin so that sigma*t_skin^4 equals F makes "OLR -> absorbed" an
+// ALGEBRAIC IDENTITY: the budget closes because the top was assigned the temperature at which
+// it closes. In ATHAD that identity was the whole of its "the energy balance closes to
+// -1.26 W/m2"; corrected, that model absorbs 271 W/m2 and emits 147.
+//
+// WHAT DOES NOT TRANSFER FROM ATHAD: the SIZE. ATHAD is 250 bar and this is a different
+// column, so the defect and its repair transfer but the magnitude does not — measure it here
+// before quoting a number.
+//
+// Default ON, matching ATHAD. ATM_SKIN_GREY=0 restores the old behaviour for A/B.
+static double skinTargetFromFlux(double F_net, double sigma)
+{
+    // Default 1. Set ATM_SKIN_GREY=0 for the legacy sigma*T^4 = F behaviour.
+    static const bool grey_skin = [](){
+        const char* e = getenv("ATM_SKIN_GREY"); return e ? atoi(e) != 0 : true; }();
+    return std::pow(F_net / ((grey_skin ? 2.0 : 1.0) * sigma), 0.25);
+}
+
 /*
 *
 */
@@ -259,7 +310,7 @@ void cAtmosphereModel::initComposition(){
         constexpr double w_cos = 0.8105694691387022;
         const double sw_mean   = w_cos * rad_equator_short + (1.0 - w_cos) * rad_pole_short;
         const double absorbed  = (1.0 - albedo_surface) * sw_mean + geothermal_flux;
-        const double t_skin_eq = std::pow(absorbed / sigma, 0.25);
+        const double t_skin_eq = skinTargetFromFlux(absorbed, sigma);
 
         cout << "        TOA insolation (cos-weighted) .... = " << sw_mean << " W/m2"
              << "   (equator " << rad_equator_short << ", pole " << rad_pole_short << ")" << endl;
@@ -351,7 +402,7 @@ void cAtmosphereModel::updateSkinTemperature(bool report)
     const double in_mean = abs_mean + geothermal_flux;
     if(!(in_mean > 0.0)) return;
 
-    const double target = std::pow(in_mean / sigma, 0.25);
+    const double target = skinTargetFromFlux(in_mean, sigma);
     const double t_old  = t_skin;
     t_skin += std::min(1.0, t_skin_relax) * (target - t_skin);
 

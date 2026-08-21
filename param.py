@@ -146,7 +146,21 @@ def main():
             # identically sigma*t_skin^4. Measured: t_skin = 254 K -> OLR 236.01 W/m2;
             # t_skin = 240 K -> OLR 188.13 W/m2; sigma*T^4 = 236.01 and 188.13. The OLR is an
             # INPUT wearing an output's clothes. Closing the fixed point below makes it equal
-            # the absorbed flux — which is then true by construction, not by test. Making the
+            # the absorbed flux — which is then true by construction, not by test.
+            #
+            # THE FORMULA ABOVE IS WRONG AND ATHAD's README ITEM 67 IS THE CORRECTION, PORTED
+            # HERE 2026-08-21 AND ON BY DEFAULT. sigma*T^4 = F gives the EFFECTIVE EMISSION
+            # temperature of the planet, not the temperature of its top layer. All shortwave in
+            # this model is deposited at the surface (one site, MultiLayerRadiation's surface
+            # energy balance — CHECKED IN THIS TREE), so the atmosphere is a pure grey long-wave
+            # medium and the classical skin result is exact: sigma*T_skin^4 = F/2, i.e.
+            # T_skin = T_eff/2^(1/4). ATM_SKIN_GREY=0 restores the old branch.
+            #
+            # So this default and everything the fixed point relaxes it to used to be 2^(1/4)
+            # too warm. THE STARTING VALUE BELOW IS STILL DERIVED BY THE OLD FORMULA and has not
+            # been re-derived for this tree. The effect size here is UNMEASURED — ATHAD is 250
+            # bar and this is a different column, so the defect transfers and the magnitude does
+            # not. Making the
             # OLR a genuine prediction requires letting the top find its own temperature
             # radiatively instead of having it prescribed. See the README.
             #
