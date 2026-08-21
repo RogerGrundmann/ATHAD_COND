@@ -247,6 +247,44 @@ static void iceCensusFn(cAtmosphereModel& m, const char* where)
         cout << "               q_Wat  " << (n_s?qw_min:0.0)   << " .. " << qw_max << endl;
         cout << "               c/q_Ice " << (n_s?rat_min:0.0) << " .. " << rat_max
              << std::defaultfloat << endl;
+
+        // DID SaturationAdjustment REACH ITS OWN TARGET? Its target is the condensate-
+        // weighted mix q_v_target = (q_c*q_sat + q_i*q_Ice)/(q_c + q_i), recomputable
+        // here from the same fields. Two readings are distinguishable:
+        //   c/q_v_target ~ 1  -> it converged, and the target itself sits below q_Ice,
+        //                        so S_i_dep could never fire by construction.
+        //   c/q_v_target << 1 -> it did NOT converge and left the cell far from
+        //                        saturation; the blockage is a failure to relax.
+        // q_Ice < q_sat below freezing, so with ANY cloud water present the mix is
+        // strictly ABOVE q_Ice — which already argues against the first reading.
+        double tg_min = 1e30, tg_max = 0.0, ct_min = 1e30, ct_max = 0.0;
+        long long n_t = 0;
+        #pragma omp parallel for collapse(2) schedule(static) \
+                reduction(min:tg_min,ct_min) reduction(max:tg_max,ct_max) reduction(+:n_t)
+        for(int i = 0; i < m.im; i++){
+            for(int j = 0; j < m.jm; j++){
+                for(int k = 0; k < m.km; k++){
+                    const double T = m.t.x[i][j][k] * m.t_0;
+                    if(!(T < 273.15 && m.cloud.x[i][j][k] > 1.0e-6)) continue;
+                    const double qI = IceSchemeCommon::qSatIce(m, T, i, j, k);
+                    const double qW = IceSchemeCommon::qSatWater(m, T, i, j, k);
+                    const double qc = m.cloud.x[i][j][k], qi = m.ice.x[i][j][k];
+                    const double qs = qc + qi;
+                    const double tgt = (qs > 1e-12) ? (qc*qW + qi*qI)/qs
+                                                    : ((T >= m.t_0) ? qW : qI);
+                    if(!(tgt > 0.0) || !(qI > 0.0)) continue;
+                    n_t++;
+                    const double r_tg = tgt / qI;
+                    const double r_ct = m.c.x[i][j][k] / tgt;
+                    tg_min = std::min(tg_min, r_tg); tg_max = std::max(tg_max, r_tg);
+                    ct_min = std::min(ct_min, r_ct); ct_max = std::max(ct_max, r_ct);
+                }
+            }
+        }
+        cout << std::scientific << std::setprecision(3)
+             << "               q_v_target/q_Ice " << (n_t?tg_min:0.0) << " .. " << tg_max << endl;
+        cout << "               c/q_v_target     " << (n_t?ct_min:0.0) << " .. " << ct_max
+             << "   over " << n_t << " cells" << std::defaultfloat << endl;
     }
 }
 }
