@@ -610,10 +610,83 @@ over the 1 bar reference". Both describe ATHAD; here it is 60 bar. The code is r
   `ATM_PROGNOSTIC_T` knob; this tree has neither — invariant 4 here is a MOIST, state-dependent
   adiabat. `moist_phys_start_iter = 0` (item 74) has been this tree's default since the fork.
 
-  **Verification done: both trees build clean and `make test` passes with 0 failures.**
-  **Verification NOT done: no A/B has been run in either tree.** The four defaults above are
-  argued, not measured, here. Do not quote an OLR, a `Psi`, a photosphere or a condensate figure
-  from this tree against a pre-port number until the pair has been run.
+  **Both trees build clean and `make test` passes with 0 failures.**
+
+  ### THE MEASUREMENT, RUN 2026-08-24 — 40 iterations, 24 threads, one binary, env-only arms
+
+  | | old branch | new defaults | |
+  |---|---|---|---|
+  | OLR | 172.69 W/m2 | **196.44** | **+13.8 %**, and still rising (182.5 -> 192.1 -> 196.3 -> 196.4) against an old arm flat from iteration 10 |
+  | imbalance (in - out) | +98.08 | +74.34 | |
+  | photosphere | 65.7 km / 261.03 K | 65.8 km / **264.72 K** | +3.7 K, height unmoved |
+  | `t_skin` | 262.88 K | 262.88 K | unmoved, as in every ATHAD arm |
+  | mean albedo | 0.5000 | 0.5000 | saturated on presence, as before |
+  | max cloud water | 49.03 g/kg | **50.000000** | **AT `cloud_cap`** — see below |
+  | max cloud ice | 2.475 g/kg | 3.245 | +31 % |
+  | `P_snow` mean | **0.000e+00 mm/a** | **9.444e+04** | the band repair, and it is not subtle |
+  | total precip mean | 9.461e+04 mm/a | 2.025e+05 | x2.14 |
+  | `Psi_max` | 40 516 (1e9 kg/s) | 29 054 | **-28 %, and still AT z = 0 m** |
+  | `div(rho u)/rho` rms | 4.864e-02 | **7.570e-02** | **+56 %, from the first diagnostic on** |
+  | `residuum_atm` | 0.094 | 0.047 | -50 % |
+
+  **THREE RESULTS THAT ARE NOT ATHAD'S, AND ONE THAT IS.**
+
+  **(1) `ATM_SAT_SUPERHEAT` IS INERT HERE. The largest effect ATHAD has ever recorded is a
+  NO-OP in this tree, and that is measured, not assumed.** 10 iterations with
+  `ATM_ICE_CENSUS=1`: the guard is REACHED 1 140 760 times in the first call and 3.4 million
+  by the third, and it REJECTS **zero** every time. The staged census agrees from the other
+  side — `condensate where canCondense is false` is **0 cells, 0 kg/kg, at all four stages**
+  (entry, post-`adjustSaturation`, post-`applyTopography`, post-`clampAndFade`). Nothing in
+  this column ever condenses into a state the ice scheme would have to undo. **So ATHAD's
+  item 75 is to this fork what `alpha_entry` was** (see the saturation-adjustment entry above):
+  the same code, the same call, and a defect that cannot fire because the cell it needs is
+  40-225 K away. It is kept ON so the two trees stay identical and so the guard is present if
+  the column ever reaches those states; it costs one `saturationMassFraction` call per Newton
+  pass and changes no number here. **Corollary: none of the OLR change above is item 75's.**
+
+  **(2) THE PRECIPITATION FLUX IN THIS MODEL IS THE CAP, BY SEVEN ORDERS OF MAGNITUDE.** This
+  is what the item-77 probe was ported to ask, and the answer here is the opposite of ATHAD's
+  (there the cap binds on the first ice-scheme call and never again). Measured, every call:
+
+      CAP PROBE: P_rain cells at the cap 6 127 404,
+                 largest value the recurrence wanted 2.795e+04 kg/(m2 s)   (cap 3.000e-03)
+
+  **A factor of 9.3 million.** `P_rain` and `P_snow` are both pinned at 9.461e+04 mm/a — mean
+  equal to max, i.e. a uniform field sitting on `P_max_flux` = 3.0e-3 kg/(m2 s) ~ 260 mm/d,
+  Earth's "well above any physical precip". So the x2.14 in total precipitation is not a
+  measurement of the band repair's size: the repair unlocked a SECOND capped category, and
+  both categories are at the ceiling. **No precipitation number from this tree means anything
+  until `P_max_flux` is sized for a 60 bar atmosphere over a 513 K sea.** `ATM_PRECIP_CAP`
+  scales it and arrived with the same port. This is item 52's rule — *look at what the caps
+  are holding back* — and this cap is holding back everything.
+
+  **(3) ATHAD'S `Psi_max` RESULT DOES NOT REPRODUCE. `Psi_max` is still reporting the
+  defect.** In ATHAD, ten projection sweeps moved the global maximum of `Psi` off the ground
+  and into the interior, which is what licensed reading `Psi_max` as the circulation again.
+  Here the maximum is **at z = 0 m in BOTH arms** — 40 516 at the ground, 29 054 at the
+  ground. The surface flux falls 28 % and still dominates the field. **Do not import ATHAD's
+  "the two maxima coincide now" sentence into this tree.**
+
+  **(4) AND `div(rho u)/rho` GOT WORSE, IN BOTH SIBLINGS, BY ABOUT THE SAME FRACTION.**
+  4.864e-02 -> 7.570e-02 here (+56 %) and 7.068e-02 -> 1.168e-01 in ATHAD_PERID (+62 %),
+  present at the FIRST diagnostic and persisting to the last. **The suspect is
+  `ATM_PROJ_SWEEPS`, and the evidence is PERID's**: its OLR moved -0.5 % across the same four
+  knobs while its divergence rose 62 %, so the rise cannot be a radiative side-effect there.
+  **IT IS NOT ATTRIBUTED — no one-knob arm has been run** — and ATHAD never measured `div`
+  against this knob either (its item 72 varied `ATM_PRESS_SWEEPS`, the TIME LOOP, and found
+  the residual bit-identical under 64x). If it holds up, converging the initial projection
+  makes the running divergence worse while making `Psi(ground)` better, which is the same
+  shape as ATHAD item 80's metric result and belongs to the same open question.
+
+  **What the OLR change is NOT.** Not item 75 (inert, measured above). The remaining
+  candidates are `ATM_RAD_DIRECT`, `ATM_PRECIP_BANDS` (through the long-wave cloud opacity —
+  cloud ice is +31 %, and ATHAD item 75 established that path responds to AMOUNT), and
+  `ATM_PROJ_SWEEPS`. The split across the two forks is suggestive — **+13.8 % at 60 bar
+  against -0.5 % at 12.5 bar**, which is the direction a solver-convergence effect would take,
+  since four Lambda sweeps fall further short the thicker the column — but that is an
+  inference from two points. **Note also that the SIGN differs from ATHAD**, where converging
+  the solver LOWERED the OLR by 15 %. **The one-knob decomposition is the next run**: four
+  arms, ~6.6 min each.
 
 - **The saturation-adjustment knobs are ported, and this fork is the control that settles what
   `alpha_entry` is worth** (ATHAD README item 64). `ATM_SAT_TRACE=1` (print-only) and

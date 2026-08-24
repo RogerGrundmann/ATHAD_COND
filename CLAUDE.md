@@ -177,11 +177,17 @@ is what ATHAD does and is only equivalent when the water field is uniform too.
 > number here.
 
 
-> **THE 2026-08-24 PORT FROM ATHAD (its README items 68-80). FOUR DEFAULTS CHANGED, AND NONE OF
-> THE FOUR IS MEASURED IN THIS TREE.** Every number recorded in this file and the README predates
-> the port. They are not retracted -- each of the four is restorable with one environment
-> variable, and the off-branch is written to be identical -- but none of them describes the
-> shipped model until the A/B has been run here.
+> **THE 2026-08-24 PORT FROM ATHAD (its README items 68-80). FOUR DEFAULTS CHANGED, AND THE
+> A/B IS RUN.** Every number recorded in this file and the README predates the port; they are
+> not retracted -- each of the four is restorable with one environment variable -- but none of
+> them describes the shipped model. **Measured, 40 iterations, 24 threads, env-only arms: OLR
+> 172.69 -> 196.44 W/m2 (+13.8 %), `Psi_max` -28 %, `div(rho u)/rho` rms +56 %, `P_snow` 0 ->
+> 9.44e4 mm/a.** Three things the README's port entry says at length and this table cannot:
+> **`ATM_SAT_SUPERHEAT` is INERT here** (reached 3.4 million times, rejects zero, and zero
+> forbidden cells at all four census stages -- ATHAD's largest effect is a no-op in a
+> subcritical column); **the precipitation flux is the `P_max_flux` cap by a factor of 9.3
+> MILLION**, so no precip number here means anything yet; and **`Psi_max` is still at z = 0 m
+> in both arms**, so ATHAD's "the maximum has moved off the ground" must NOT be imported.
 >
 > | knob | was | is | ATHAD's finding |
 > |---|---|---|---|
@@ -193,11 +199,12 @@ is what ATHAD does and is only equivalent when the water field is uniform too.
 > **Why they ship on rather than off.** Each is a repair whose ARGUMENT is universal -- a
 > projection that has not converged, a relaxation that has not converged, a routine disagreeing
 > with `IceSchemeCommon::canCondense` about where a phase can exist, a flux destroyed by the
-> temperature of the air it falls through. **The SIZES are ATHAD's 250 bar column and do not
-> transfer**: this atmosphere is a different pressure and a different temperature, so how far
-> 4 Lambda sweeps fall short, and how many cells the superheat guard rejects, are open questions
-> here. Restore the old branch with
+> temperature of the air it falls through. **The SIZES were ATHAD's and did not transfer, which
+> is now measured rather than warned about**: one of the four turned out to be inert here and
+> another turned out to be capped. Restore the old branch with
 > `ATM_PROJ_SWEEPS=1 ATM_RAD_DIRECT=0 ATM_SAT_SUPERHEAT=0 ATM_PRECIP_BANDS=0`.
+> **WHICH of the four moves the OLR is NOT attributed** -- no one-knob arm has been run, and
+> item 75 is excluded only because it is inert.
 >
 > **Default-off knobs ported with it, off-branch bit-identical:** `ATM_CELL_ALTERNATE` (item 69 --
 > four of five prescribed cells turn the same way, and `edgeRadialCoeff` already assumes the
