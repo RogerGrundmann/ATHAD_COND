@@ -929,14 +929,14 @@ void cAtmosphereModel::RunTimeSlice(int Ma){
     initMetricRadius();
     checkMetricConsistency();
 
-    #pragma omp parallel sections
-    {
-        #pragma omp section
-        { init_layer_heights(); }
-
-        #pragma omp section
-        { init_tropopause_layers(); }
-    }
+    // SERIALISED DELIBERATELY. These two ran as concurrent omp sections, which forced
+    // init_tropopause_layers() to invert the grid ANALYTICALLY rather than read
+    // m_layer_heights -- it says so itself, "this routine runs in an omp section CONCURRENT
+    // with init_layer_heights()". A pressure-placed grid (ATM_GRID_PRESSURE) has no analytic
+    // inverse, so the table has to exist first. The two calls are O(im) and O(jm); the
+    // parallelism bought nothing and cost a documented race hazard.
+    init_layer_heights();
+    init_tropopause_layers();
 
     // AFTER init_layer_heights: it compares exp_rm against the heights that call builds.
     checkRadialMetric();

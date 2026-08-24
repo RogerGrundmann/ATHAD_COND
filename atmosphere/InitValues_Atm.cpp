@@ -359,8 +359,21 @@ void cAtmosphereModel::init_tropopause_layers(){
     // 28 of 41 levels, which is wrong too — 4.9 km, not 11 — but wrong in a way that still
     // lands inside the troposphere, so it never showed.
     const double idx_scale = (double)(im - 1) / zeta;
+    // ATM_GRID_PRESSURE places the levels by mass, so there is no closed-form inverse of the
+    // grid any more: search the table instead. This is safe now that init_layer_heights()
+    // runs BEFORE this routine rather than concurrently with it (see cAtmosphereModel.cpp).
+    // The analytic path is kept for the legacy stretch so that branch is bit-identical.
     auto height_to_level = [&](double h) -> double {
-        if(!(h > 0.0) || !(L_atm > 0.0) || !(zeta > 0.0)) return 0.0;
+        if(!(h > 0.0)) return 0.0;
+        if(gridPressure()){
+            double best = 0.0, best_d = 1.0e300;
+            for(int i = 0; i < im; i++){
+                const double d = std::fabs((double)get_layer_height(i) - h);
+                if(d < best_d){ best_d = d; best = (double)i; }
+            }
+            return std::min(std::max(best, 0.0), (double)(im - 1));
+        }
+        if(!(L_atm > 0.0) || !(zeta > 0.0)) return 0.0;
         const double i = round(idx_scale * std::log(1.0 + h / L_atm));
         return std::min(std::max(i, 0.0), (double)(im - 1));
     };
@@ -368,6 +381,11 @@ void cAtmosphereModel::init_tropopause_layers(){
     // routine runs in an omp section CONCURRENT with init_layer_heights(), so reading
     // m_layer_heights here would race the vector that fills it.
     auto level_to_height = [&](double i) {
+        if(gridPressure()){
+            int k = (int)std::lround(i);
+            if(k < 0) k = 0; if(k > im - 1) k = im - 1;
+            return (double)get_layer_height(k);
+        }
         return (std::exp(zeta * i / (double)(im - 1)) - 1.0) * L_atm;
     };
 
