@@ -694,8 +694,26 @@ void cAtmosphereModel::paraview_vtk_zonal(string &Name_Bathymetry_File,
     double dx = 0.1;
     double dy = 0.05;
 
+    // ==================================================================
+    // THE VERTICAL AXIS IS TRUE HEIGHT, NOT LEVEL INDEX.
+    //
+    // x = i*dx puts the points at LEVEL INDICES, which on this exponentially stretched
+    // grid is not a height axis at all: layer 0 is 1.2 km and layer 39 is 22.8 km
+    // (zeta = 3, im = 41), so index space stretches the bottom of the atmosphere and
+    // squashes the top by 18.6x. Everything drawn on it inherits that — contours, glyph
+    // angles and streamline curvature alike — and the distortion VARIES with height, so
+    // no single aspect-ratio setting in ParaView can undo it.
+    //
+    // Mapping the true height onto the same 0..(im-1)*dx span keeps the figure the size
+    // it always was while making the axis linear in metres, so the vertical exaggeration
+    // becomes ONE constant (~30x here) instead of a function of altitude.
+    // ==================================================================
+    const double h_top  = get_layer_height(im - 1);
+    const double x_span = (im - 1) * dx;
+    const double x_of_h = (h_top > 0.0) ? x_span / h_top : 0.0;   // plot units per metre
+
     for(int i = 0; i < im; i++){
-        double x = i * dx;
+        double x = get_layer_height(i) * x_of_h;
         for(int j = 0; j < jm; j++){
             buf << x << " " << j * dy << " " << 0.0 << '\n';
         }
@@ -712,11 +730,69 @@ void cAtmosphereModel::paraview_vtk_zonal(string &Name_Bathymetry_File,
 
     double inv_u_0 = 1.0 / u_0;
 
+    // ==================================================================
+    // TWO DEFECTS IN THE GLYPH/STREAMLINE VECTOR, AND ONLY ONE IS A SCALING TYPO.
+    //
+    // (1) The arrays hold NON-DIMENSIONAL velocity (u/u_0), so m/s is `* u_0` — which is
+    //     what dump_zonal writes for the u/v/w SCALARS three lines above. The VECTORS
+    //     field divided instead, giving u/u_0^2. Measured in a shipped file: the scalar
+    //     v-Component and the vector's y differ by exactly 64 = u_0^2 at u_0 = 8 m/s.
+    //     Direction is untouched by a uniform factor, so this never moved an arrow — it
+    //     just made every magnitude 64x too small and inconsistent with the scalars
+    //     plotted beside it.
+    //
+    // (2) THE ONE THAT MAKES GLYPHS DISAGREE WITH STREAMLINES. The geometry written
+    //     above is INDEX SPACE: x = i*dx per LEVEL, y = j*dy per LATITUDE INDEX. A
+    //     velocity in m/s does not live in that space. One level is 1.2 km at the surface
+    //     and 22.8 km at the top (zeta = 3, im = 41) while one latitude index is a fixed
+    //     ~111 km, so the two axes are compressed by wildly different and, in the radial
+    //     case, height-DEPENDENT factors.
+    //
+    //     The physical flow here is ~5800:1 horizontal to vertical (measured: v = 3.25 m/s
+    //     against u = 0.00056 m/s). Drawn as raw m/s in index space, every glyph lies flat
+    //     along the latitude axis and the overturning is invisible — while Psi and the
+    //     stream tracer, which integrate, resolve cells that close through exactly those
+    //     tiny vertical velocities over a 300 km depth. That is the glyphs and the
+    //     streamlines telling different stories about the same field.
+    //
+    // uv_plot converts the velocity INTO the plot's coordinates — plot-units per second —
+    // so a closed cell is drawn closed and glyphs and streamlines agree by construction:
+    //
+    //     u_plot = u_phys * dx / dz_local        dz_local = the layer's true thickness
+    //     v_plot = v_phys * dy / dl              dl = metres per latitude index
+    //
+    // u-v-Cell is KEPT (now correctly dimensional) because it is the honest m/s field and
+    // some workflows want it; uv_plot is the one to glyph and stream-trace. Diagnostic
+    // output only — no physics reads either.
+    // ==================================================================
+    const double dl = r_Earth * 1000.0 * M_PI / (double)(jm - 1);   // m per latitude index
+
     buf << "VECTORS u-v-Cell float\n";
     for(int i = 0; i < im; i++){
         for(int j = 0; j < jm; j++){
-            buf << safe_val(u.x[i][j][k_zonal] * inv_u_0) << " "
-                << safe_val(v.x[i][j][k_zonal] * inv_u_0) << " " << 0.0 << '\n';
+            buf << safe_val(u.x[i][j][k_zonal] * u_0) << " "
+                << safe_val(v.x[i][j][k_zonal] * u_0) << " " << 0.0 << '\n';
+        }
+    }
+
+    // Units are plot-units per DAY, not per second. The file is written ios::fixed at 8
+    // decimals, and plot-units per second are ~1e-10 here, so a per-second field prints as
+    // exactly 0.00000000 for most of the domain. 86400 puts it in a printable range and is
+    // a real unit rather than a fudge: "how far a parcel moves across this plot in a day".
+    // A uniform factor, so it cannot affect direction.
+    const double per_day = 86400.0;
+
+    // sx is now the SAME constant at every level, because the geometry above is linear in
+    // height. On the old index-space geometry it had to be dx/dz_local, which varied 18.6x
+    // across the column — correct for that geometry, but the geometry was the defect.
+    const double sx = x_of_h;      // plot units per metre, vertical
+    const double sy = dy / dl;     // plot units per metre, meridional
+
+    buf << "VECTORS uv_plot float\n";
+    for(int i = 0; i < im; i++){
+        for(int j = 0; j < jm; j++){
+            buf << safe_val(u.x[i][j][k_zonal] * u_0 * sx * per_day) << " "
+                << safe_val(v.x[i][j][k_zonal] * u_0 * sy * per_day) << " " << 0.0 << '\n';
         }
     }
 

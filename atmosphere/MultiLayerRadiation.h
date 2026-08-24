@@ -120,7 +120,8 @@ public:
             //   up[i]  upward   long-wave flux leaving the TOP    of layer i  [W/m2]
             //   dn[i]  downward long-wave flux leaving the BOTTOM of layer i  [W/m2]
             //   T[i]   layer temperature [K], updated in place by the sweeps
-            std::vector<double> up(m.im, 0.0), dn(m.im + 1, 0.0), T(m.im, 0.0);
+            std::vector<double> up(m.im, 0.0), dn(m.im + 1, 0.0), T(m.im, 0.0),
+                                Gf(m.im, 0.0);   // dB/dF for the direct solve
 
             const int i_trop  = m.im - 1;   // top layer
             const int i_mount = 0;          // surface / bottom layer
@@ -323,8 +324,90 @@ public:
                 // nearly a no-op, since up and dn both approach the local sigma*T^4 and the
                 // update becomes a three-point average. The fluxes themselves, and hence
                 // the OLR, are exact for the current temperature field at every iteration.
-                constexpr int n_lambda = 4;
+                // ATM_N_LAMBDA — the sweep count, made a knob so the Lambda iteration can be
+                // run to convergence and compared against the closed form below. 4 is the
+                // inherited value and the default, so this is bit-identical when unset.
+                static const int n_lambda = [](){
+                    const char* e = getenv("ATM_N_LAMBDA"); return e ? atoi(e) : 4; }();
 
+                // ---- DIRECT SOLUTION, no iteration at all (ATM_RAD_DIRECT) ----
+                // Ported from ATHAD, README items 30 and 71.
+                //
+                // The Lambda iteration below is a Jacobi relaxation on an im-link chain:
+                // information moves one layer per sweep, so it needs O(N^2) sweeps, and
+                // n_lambda = 4 is an Earth constant — a loop bound nobody reads as a physical
+                // assumption, adequate on a 1 bar column and under-converged on a thick one.
+                //
+                // It does not need iterating. In radiative equilibrium the NET flux is
+                // constant with height, and that closes the system in one pass. Writing
+                // a_i = 1 - eps_i/2, b_i = eps_i/2, a layer in equilibrium
+                // (B_i = (U_{i-1} + D_i)/2, which is the eps-cancelled condition above)
+                // transfers
+                //     U_i     = a_i U_{i-1} + b_i D_i
+                //     D_{i-1} = b_i U_{i-1} + a_i D_i
+                // and a_i + b_i = 1 exactly, so U - D takes the same value at both faces:
+                // F is constant, which is the definition of radiative equilibrium and here
+                // falls out of the discretisation rather than being imposed. Then
+                //     U_{i-1} = B_i + F/(2 a_i),   D_i = B_i - F/(2 a_i)
+                // and eliminating the fluxes leaves an explicit march for the source
+                // function, LINEAR in F:
+                //     B_{i+1} - B_i = (F/2) [ (1 - eps_i)/a_i - 1/a_{i+1} ]
+                // March G = dB/dF from the surface boundary U_m = sigma*T_s^4 (so
+                // B_{m+1} = sigma*T_s^4 - F/(2 a_{m+1}), i.e. G_{m+1} = -1/(2 a_{m+1})),
+                // then close on the top boundary D_n = 0 (so B_n = F/(2 a_n)):
+                //     F = sigma*T_s^4 / ( 1/(2 a_n) - G_n )
+                // and B_i = sigma*T_s^4 + F G_i. Two O(N) passes, exact.
+                //
+                // Validated in ATHAD against the Lambda iteration run to convergence on
+                // synthetic columns — identical to all printed digits transparent, optically
+                // thick and 250-bar-graded — and it reproduces the two exact limits: with
+                // eps -> 0 it gives F = sigma*T_s^4 and T_i = T_s/2^(1/4), the classical skin
+                // temperature of a freely radiating surface.
+                //
+                // **DEFAULT ON, MATCHING ATHAD SINCE 2026-08-22 (its item 71).
+                // `ATM_RAD_DIRECT=0` restores the 4-sweep Lambda iteration; every OLR this
+                // tree recorded before the port used it.**
+                //
+                // WHY THE DEFAULT IS ON HERE, AND WHAT IS NOT MEASURED. The argument that
+                // flipped it in ATHAD is not a tuning result: the Lambda iteration converges
+                // MONOTONICALLY onto this closed form, which makes the closed form the answer
+                // the sweeps are trying to reach rather than an alternative to them. Measured
+                // there at 40 iterations, 24 threads:
+                //
+                //     n_lambda = 4 (was shipped) .... 243.43 W/m2    +15.06 %
+                //     n_lambda = 64 ................. 227.55 W/m2     +7.55 %
+                //     n_lambda = 512 ................ 212.54 W/m2     +0.46 %
+                //     ATM_RAD_DIRECT=1 .............. 211.57 W/m2      0.00 %
+                //
+                // The exact answer is also free: 280.97 s against 277.34 s for the 4-sweep arm
+                // and 467 s for n_lambda = 512. **THE SIZE OF THE SHIFT IS ATHAD'S 250 BAR
+                // COLUMN AND IS NOT MEASURED IN THIS FORK** — this atmosphere is a quarter of
+                // that pressure, so its optical depth per layer, and hence how far 4 sweeps
+                // fall short, is a different number. Only the direction is inherited.
+                static const bool rad_direct = [](){
+                    const char* e = getenv("ATM_RAD_DIRECT");
+                    return !(e && atoi(e) == 0); }();
+
+                if (rad_direct) {
+                    const int m1 = i_mount + 1, ntop = i_trop;
+                    if (ntop > m1) {
+                        auto aof = [&](int i){ return 1.0 - 0.5 * m.epsilon.x[i][j][k]; };
+                        const double B_s = m.sigma * pow(T[i_mount], 4.0);
+                        Gf[m1] = -0.5 / aof(m1);
+                        for (int i = m1; i < ntop; i++) {
+                            const double e = m.epsilon.x[i][j][k];
+                            Gf[i+1] = Gf[i] + 0.5 * ((1.0 - e) / aof(i) - 1.0 / aof(i+1));
+                        }
+                        const double den = 0.5 / aof(ntop) - Gf[ntop];
+                        const double F   = (std::fabs(den) > 1.0e-30) ? B_s / den : 0.0;
+                        for (int i = m1; i <= ntop; i++) {
+                            const double B = B_s + F * Gf[i];
+                            if (B > 0.0 && AtomUtils::is_finite_safe(B))
+                                T[i] = pow(B / m.sigma, 0.25);
+                        }
+                    }
+                }
+                else
                 for (int it = 0; it < n_lambda; it++) {
 
                     // Upward sweep. The surface is layer i_mount and emits as a black body;

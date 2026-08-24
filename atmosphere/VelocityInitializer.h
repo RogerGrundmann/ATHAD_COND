@@ -224,10 +224,63 @@ private:
         if(k == 1) return edgeSubtrop();
         return edgeSubpolar();
     }
+
+    // ==================================================================
+    // ATM_CELL_ALTERNATE=1 — MAKE THE PRESCRIBED CELLS COUNTER-ROTATE.
+    //
+    // The middle cells are all Ferrel copies and cellPolar carries Ferrel's sense too,
+    // so at n = 5 the prescribed v_trop sequence is
+    //
+    //     -3.0 | +4.0 | +4.0 | +4.0 | +0.5          FOUR cells turning the same way
+    //
+    // and the initial Psi field is single-signed over almost the whole hemisphere
+    // (measured: 3 sign bands at the surface, not 5; near-uniform '+' above 9 km).
+    // A stack of co-rotating cells is not a multi-cell circulation, and their
+    // column-integrated meridional mass fluxes ADD instead of cancelling.
+    //
+    // THE SAME FILE ALREADY ASSUMES THE ALTERNATION IT DOES NOT IMPOSE.
+    // edgeRadialCoeff() above returns (k % 2 == 0) ? mag : -mag, i.e. the ascent and
+    // descent branches at the cell EDGES alternate by parity — which is only correct
+    // if the CORES alternate too. Shipped, the radial branches alternate and the
+    // meridional cores do not, so u and v disagree about how many cells there are.
+    // That is a divergence written into the initial condition by construction, and
+    // project_initial_velocity() exists to remove exactly this "unphysical
+    // dilatational artefact of the analytical profile".
+    //
+    // The rule here is parity, matching edgeRadialCoeff: even k direct (Hadley sense,
+    // v_trop < 0), odd k indirect (Ferrel sense, v_trop > 0). Each template keeps its
+    // own MAGNITUDE; only the sense is imposed, by flipping v_trop and v_surf together
+    // so the cell's vertical structure is preserved and only its rotation reverses.
+    //
+    // w IS DELIBERATELY NOT FLIPPED. The zonal wind is the jet structure and is set by
+    // thermal-wind balance, not by the overturning sense; flipping it would change the
+    // jets as well as the cells and confound the measurement. This is a change to the
+    // MERIDIONAL CIRCULATION only.
+    //
+    // Default OFF, so every number recorded before this knob is reproducible and the
+    // off-branch is bit-identical. n <= 2 is unaffected either way (cell 0 is already
+    // direct and cell 1, if present, is already the polar/indirect one).
+    // ==================================================================
+    static bool alternateCells(){
+        static const bool on = [](){
+            const char* e = getenv("ATM_CELL_ALTERNATE"); return e && atoi(e) != 0; }();
+        return on;
+    }
+
     static Amp centreAmp(int k, int n){
-        if(k == 0)     return cellHadley();
-        if(k == n - 1) return cellPolar();
-        return cellFerrel();
+        Amp a = (k == 0)     ? cellHadley()
+              : (k == n - 1) ? cellPolar()
+                             : cellFerrel();
+        if(!alternateCells()) return a;
+
+        // Parity rule, matching edgeRadialCoeff(): even k is a DIRECT cell.
+        const bool want_direct = (k % 2 == 0);
+        const bool is_direct   = (a.v_trop < 0.0);
+        if(want_direct != is_direct){
+            a.v_trop = -a.v_trop;
+            a.v_surf = -a.v_surf;
+        }
+        return a;
     }
 
     // The four inherited radial magnitudes are 0.02894*(1 - phi/150) to every figure
@@ -298,6 +351,25 @@ private:
              << (m.cell_amp_mode == 0 && latScale() != 1.0
                  ? "   <- amplitudes unscaled, meridional shear is 1/s x Earth's" : "")
              << endl;
+
+        // The rotation sense of each prescribed cell, so a co-rotating stack is visible
+        // at startup instead of only in the Psi field. See ATM_CELL_ALTERNATE above.
+        int n_direct = 0, n_flips = 0;
+        cout << "      cell sense     = ";
+        for(int k = 0; k < n; k++){
+            const double vt = centreAmp(k, n).v_trop;
+            const bool direct = (vt < 0.0);
+            if(direct) n_direct++;
+            if(k > 0 && direct != (centreAmp(k - 1, n).v_trop < 0.0)) n_flips++;
+            cout << (direct ? "direct" : "indir.") << "(" << vt << ")" << (k + 1 < n ? " / " : "");
+        }
+        cout << endl;
+        cout << "      ATM_CELL_ALTERNATE = " << (alternateCells() ? "1" : "0")
+             << ": " << n_flips << " of " << (n - 1) << " adjacent pairs counter-rotate, "
+             << n_direct << " direct / " << (n - n_direct) << " indirect";
+        if(!alternateCells() && n > 2 && n_flips < n - 1)
+            cout << "   <- CO-ROTATING STACK, their mass fluxes add";
+        cout << endl;
     }
 
     // cell_amp_mode — scale the prescribed AMPLITUDES with the latitude scale.

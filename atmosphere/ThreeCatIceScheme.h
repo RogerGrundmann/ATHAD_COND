@@ -131,7 +131,20 @@ public:
         applyTopography();
 
         printReport();
-
+        if (cap_probe) {
+            printf("      S_r PROBE: max S_r %.6e at [%d][%d][%d]  t_u = %.2f K\n"
+                   "                 S_c_au %.3e  S_ac %.3e  -S_ev %.3e  S_s_shed %.3e  S_g_shed %.3e\n"
+                   "                 -S_r_cri %.3e  -S_r_frz %.3e  S_s_melt %.3e  S_g_melt %.3e\n",
+                   g_max_Sr, g_Sr_i, g_Sr_j, g_Sr_k, g_Sr_T,
+                   g_Sr_terms[0], g_Sr_terms[1], g_Sr_terms[2], g_Sr_terms[3], g_Sr_terms[4],
+                   g_Sr_terms[5], g_Sr_terms[6], g_Sr_terms[7], g_Sr_terms[8]);
+            g_max_Sr = 0.0;
+        }
+        if (cap_probe)
+            printf("      CAP PROBE: P_rain cells at the cap %lld, largest value the recurrence"
+                   " wanted %.6e kg/(m2 s)  (cap %.6e)\n",
+                   g_cap_hits, g_max_want, 3.0e-3 * precip_cap_scale),
+            g_cap_hits = 0, g_max_want = 0.0;
         cout << "      ThreeCategoryIceScheme ended" << endl;
 
         auto end = std::chrono::high_resolution_clock::now();
@@ -141,6 +154,22 @@ public:
 
 private:
     cAtmosphereModel& m;
+
+    // README item 76 — the precipitation-flux phase bands. Default ON;
+    // ATM_PRECIP_BANDS=0 restores Earth's hard-zeroing bands. See the note at the
+    // P_rain/P_snow/P_graupel assignment.
+    static inline const bool precip_bands_fix = [](){
+        const char* e = getenv("ATM_PRECIP_BANDS"); return e ? (atoi(e) != 0) : true; }();
+    // Multiplier on P_max_flux (item 77). Default 1.0 = the shipped 3.0e-3 kg/(m2 s).
+    static inline const double precip_cap_scale = [](){
+        const char* e = getenv("ATM_PRECIP_CAP");
+        const double v = e ? atof(e) : 1.0; return (v > 0.0) ? v : 1.0; }();
+    static inline const bool cap_probe = [](){
+        const char* e = getenv("ATM_ICE_CENSUS"); return e && atoi(e) != 0; }();
+    static inline long long g_cap_hits = 0;
+    static inline double g_max_want = 0.0;
+    static inline double g_max_Sr = 0.0, g_Sr_T = 0.0, g_Sr_terms[9] = {0};
+    static inline int g_Sr_i = -1, g_Sr_j = -1, g_Sr_k = -1;
 
     // diagnostic output state (set during computeColumns)
     bool rain = false;
@@ -544,6 +573,17 @@ private:
                                            - S_i_au - S_d_au - S_s_agg - S_g_agg - S_i_cri;
                         m.S_r.x[i][j][k] =  S_c_au + S_ac - S_ev + S_s_shed + S_g_shed
                                            - S_r_cri - S_r_frz + S_s_melt + S_g_melt;
+                        if (cap_probe && m.S_r.x[i][j][k] > 0.0) {
+                            #pragma omp critical(srmax)
+                            if (m.S_r.x[i][j][k] > g_max_Sr) {
+                                g_max_Sr = m.S_r.x[i][j][k];
+                                g_Sr_i = i; g_Sr_j = j; g_Sr_k = k; g_Sr_T = t_u;
+                                g_Sr_terms[0]=S_c_au; g_Sr_terms[1]=S_ac; g_Sr_terms[2]=-S_ev;
+                                g_Sr_terms[3]=S_s_shed; g_Sr_terms[4]=S_g_shed;
+                                g_Sr_terms[5]=-S_r_cri; g_Sr_terms[6]=-S_r_frz;
+                                g_Sr_terms[7]=S_s_melt; g_Sr_terms[8]=S_g_melt;
+                            }
+                        }
                         m.S_s.x[i][j][k] =  S_i_au + S_d_au + S_s_agg + S_s_rim + S_s_dep
                                            + S_i_cri + S_r_cri - S_s_melt - S_csg;
                         m.S_g.x[i][j][k] =  S_g_agg + S_g_rim + S_g_dep + S_i_cri + S_r_cri
@@ -556,7 +596,64 @@ private:
                         // inf, so the scheme stays finite (over-precipitates at worst, like the
                         // other untuned schemes — usable, not NaN). ~260 mm/d, well above any
                         // physical precip.
-                        constexpr double P_max_flux = 3.0e-3;        // kg/(m2*s) ~260 mm/d hard cap
+                        // ATHAD README item 77: the cap is a KNOB now, because it BINDS here.
+                        // 3.0e-3 kg/(m2 s) ~ 260 mm/d is "well above any physical precip" on
+                        // Earth; in ATHAD `max P_rain` sits exactly ON it (item 76). This file's
+                        // own rule, learned from item 52's MC_t: when a cap binds, find out what
+                        // it is holding back before trusting the field beneath it.
+                        // ATM_PRECIP_CAP scales it; unset = 1.0 = the shipped 3.0e-3.
+                        const double P_max_flux = 3.0e-3 * precip_cap_scale;   // kg/(m2*s)
+                        // ATHAD README item 76: THE PHASE BANDS ARE EARTH'S, AND THEY DO TWO
+                        // JOBS AT ONCE.
+                        //
+                        // As written, each category is `(band) ? (inherited + produced) : 0`,
+                        // which conflates "can this phase be PRODUCED in this cell" with "can a
+                        // flux PASS THROUGH this cell". The second has no temperature bound at
+                        // all — falling ice does not cease to exist because the air it is
+                        // passing through is cold — and the `: 0.0` does not merely withhold
+                        // production, it DESTROYS a flux arriving from the level above.
+                        //
+                        // The bands bottom out at t_00 = 236.15 K (-37 C) and t_000 = 253.15 K
+                        // (-20 C): Earth's homogeneous-freezing and mixed-phase thresholds. On
+                        // Earth they bound a regime where precipitation is negligible anyway.
+                        // ATHAD's ENTIRE condensing layer is at 221-230 K — colder than the
+                        // coldest band — so all three fluxes were identically zero everywhere,
+                        // in every run this project has produced, however much snow S_s made.
+                        // Measured: S_s = 0.0119 g/kg/s at 277 km with P_snow = 0.000000.
+                        //
+                        // Fixed: the inherited flux always passes; only PRODUCTION is gated.
+                        // Snow production runs wherever the air is below freezing (ice crystals
+                        // form and fall at any temperature below t_0), so its t_000 floor goes.
+                        // Graupel keeps its t_00 floor, which is physical rather than Earth-
+                        // specific: riming needs supercooled LIQUID, and below -37 C there is
+                        // none. Rain keeps t_0 for the same kind of reason.
+                        //
+                        // Where the flux then goes is already handled:
+                        // IceSchemeCommon::evaporateWhereImpossible converts an incoming flux
+                        // to vapour at P/(v*rho) when it falls into a superheated or
+                        // supercritical cell, with the mass accounted for.
+                        //
+                        // ATM_PRECIP_BANDS=0 restores the old behaviour.
+                        if (precip_bands_fix) {
+                            const double prod_r = (t_u >= m.t_0)
+                                ? m.r_humid.x[i+1][j][k] * m.S_r.x[i+1][j][k] * step_i : 0.0;
+                            const double prod_s = (t_u <  m.t_0)
+                                ? m.r_humid.x[i+1][j][k] * m.S_s.x[i+1][j][k] * step_i : 0.0;
+                            const double prod_g = (t_u <  m.t_0 && t_u >= m.t_00)
+                                ? m.r_humid.x[i+1][j][k] * m.S_g.x[i+1][j][k] * step_i : 0.0;
+                            const double want_r = std::max(0.0, m.P_rain.x[i+1][j][k] + prod_r);
+                            if (cap_probe && want_r >= P_max_flux) {
+                                #pragma omp atomic
+                                g_cap_hits++;
+                                #pragma omp critical(capmax)
+                                { if (want_r > g_max_want) g_max_want = want_r; }
+                            }
+                            m.P_rain.x[i][j][k]    = std::min(P_max_flux, want_r);
+                            m.P_snow.x[i][j][k]    = std::min(P_max_flux, std::max(0.0,
+                                m.P_snow.x[i+1][j][k]    + prod_s));
+                            m.P_graupel.x[i][j][k] = std::min(P_max_flux, std::max(0.0,
+                                m.P_graupel.x[i+1][j][k] + prod_g));
+                        } else {
                         m.P_rain.x[i][j][k] = (t_u >= m.t_0)
                             ? std::min(P_max_flux, std::max(0.0, m.P_rain.x[i+1][j][k]
                                 + m.r_humid.x[i+1][j][k] * m.S_r.x[i+1][j][k] * step_i))
@@ -571,6 +668,7 @@ private:
                             ? std::min(P_max_flux, std::max(0.0, m.P_graupel.x[i+1][j][k]
                                 + m.r_humid.x[i+1][j][k] * m.S_g.x[i+1][j][k] * step_i))
                             : 0.0;
+                        }
 
                         // Track column maxima (thread-local via reduction)
                         local_max_rain    = std::max(local_max_rain,    m.P_rain.x[i][j][k]);

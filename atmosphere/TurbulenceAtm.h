@@ -338,7 +338,7 @@ private:
 
                     // ---- geometry ----
                     const double rm           = m.rad.z[i];
-                    const double exp_rm       = 1.0 / (rm + 1.0);
+                    const double exp_rm       = m.metricExpRm(rm);
                     double sinthe             = sin(m.the.z[j]);
                     if (sinthe == 0.0) sinthe = 1.0e-5;
                     const double rmsinthe     = rm * sinthe;
@@ -558,7 +558,7 @@ private:
         // so its first-derivative coefficient is simply 2/rm (not 2*exp_rm/rm).
         // dtkedthe already carries the 1/rm factor, so the cosθ coefficient is
         // cosθ/(rm sinθ) rather than cosθ/(rm² sinθ).
-        const double exp_rm   = 1.0 / (rm + 1.0);
+        const double exp_rm   = m.metricExpRm(rm);
         const double exp_2_rm = exp_rm * exp_rm;
         // ATM_METRIC_RADIUS — identity when off. See RungeKutta_Atm_Turb for the rationale.
         const double inv_rm   = 1.0 / m.metricRadius(rm);
@@ -687,7 +687,7 @@ private:
         const double rmsinthe = rm * sinthe;
 
         // Geometry factors matching compute_k_omega convention
-        const double exp_rm   = 1.0 / (rm + 1.0);
+        const double exp_rm   = m.metricExpRm(rm);
         const double exp_2_rm = exp_rm * exp_rm;
         // ATM_METRIC_RADIUS — identity when off. See RungeKutta_Atm_Turb for the rationale.
         const double inv_rm   = 1.0 / m.metricRadius(rm);

@@ -533,6 +533,88 @@ over the 1 bar reference". Both describe ATHAD; here it is 60 bar. The code is r
 
 ## Remaining work
 
+- **THE ATHAD PORT OF 2026-08-24 (its README items 68-80): four defaults changed, seven knobs
+  added, and the measurement is OPEN.** The two trees' physics files are kept name-identical so
+  fixes cherry-pick in both directions; this is the second batch to travel (the first was item
+  67's grey skin factor, 2026-08-21). **What transfers is each repair's argument. What does not
+  transfer is its size** — ATHAD is 250 bar over a 1500 K melt.
+
+  **The four that change results.** Restore all of them with
+  `ATM_PROJ_SWEEPS=1 ATM_RAD_DIRECT=0 ATM_SAT_SUPERHEAT=0 ATM_PRECIP_BANDS=0`.
+
+  1. **`ATM_PROJ_SWEEPS` 1 -> 10** (item 68). The initial pressure projection ran one relaxation
+     sweep per pass. `Psi(ground)` must be identically zero — `u` at the surface is 0 and `Psi` at
+     the lid is 0, so the column-integrated meridional mass flux is forced to vanish — and in
+     ATHAD it was **2.09x the interior circulation**. Ten sweeps remove 52.5 % of that and then
+     plateau, so ~44 % is structural and unexplained (ATHAD item 72: the projection has CONVERGED
+     to a fixed point that is not divergence-free, and 64x the sweeps changes it by nothing).
+     The cost is a one-time startup expense. **In ATHAD this also changed what `Psi_max` MEANS**:
+     at one sweep the global maximum of `Psi` WAS the spurious surface flux, so `Psi_max` was
+     reporting the defect rather than the circulation, and the two maxima only coincide at 10.
+  2. **`ATM_RAD_DIRECT`, new and ON** (items 30, 71). The Lambda iteration is Jacobi on an
+     `im`-link chain: information moves one layer per sweep, so it needs O(N^2) sweeps, and the
+     inherited `n_lambda = 4` is an Earth constant — a loop bound nobody reads as a physical
+     assumption. The system does not need iterating: `a_i + b_i = 1` makes the net flux constant
+     with height, which closes it in two O(N) passes, exact. ATHAD measured the Lambda iteration
+     converging MONOTONICALLY onto the closed form (243.43 -> 227.55 -> 212.54 -> **211.57** W/m2
+     at 4/64/512/direct), which is the test that matters: the closed form is the answer the
+     sweeps are trying to reach, not an alternative to them. It is also free — 281 s against
+     277 s for four sweeps and 467 s for 512. `ATM_N_LAMBDA` arrives with it.
+  3. **`ATM_SAT_SUPERHEAT`, new and ON** (item 75). `SaturationAdjustment::clampAndFade` tested
+     whether a cell could hold a condensed phase, condensed, added the latent heat **that makes
+     its own answer false**, and never re-tested; `IceSchemeCommon::evaporateWhereImpossible`
+     then deleted the result, correctly, every iteration. Work done and undone, invisible because
+     the diagnostics print after the whole moist block. The guard re-tests after the write-back
+     and rejects the step whole, so what a rejected cell keeps is its supersaturation — the
+     honest state of a parcel that cannot condense — rather than a manufactured phase. **This is
+     the largest single effect ATHAD has recorded: OLR -49.4 %, photosphere +44 km, max cloud
+     water 0.000000 -> 40.09 g/kg.** It is also what refuted that tree's "microphysics is
+     unmeasurable" wall: five consecutive null repairs had been measuring an annihilation.
+  4. **`ATM_PRECIP_BANDS`, new and ON** (item 76). Each precipitation category was written
+     `(band) ? (inherited + produced) : 0`, which conflates "can this phase be PRODUCED here"
+     with "can a flux PASS THROUGH here". The second has no temperature bound — falling ice does
+     not cease to exist because the air it passes through is cold — and the `: 0.0` DESTROYS a
+     flux arriving from the level above. The bands bottom out at Earth's 236.15 K and 253.15 K.
+     Fixed: the inherited flux always passes, only production is gated, and snow loses its
+     -20 C floor. Graupel keeps its -37 C floor, which is physical (riming needs supercooled
+     liquid); rain keeps 273.15 K for the same kind of reason.
+
+  **Default-off, off-branch bit-identical:** `ATM_CELL_ALTERNATE` (item 69 — `centreAmp` fills
+  every middle cell with a Ferrel copy and the polar template already carries the Ferrel sense,
+  so four of five prescribed cells turn the same way and their mass fluxes ADD; `edgeRadialCoeff`
+  already assumes the parity the cores do not impose), `ATM_METRIC_EXACT` (item 80 —
+  `exp_rm = 1/(rm+1)` is the Jacobian of a QUADRATIC stretch applied to an exponential grid,
+  documented as the transformation's Jacobian in two files that agree with each other and with
+  the variable's name; `metricExpRm()` replaces all eleven sites and `metricCurv()` adds the
+  `-(J'/J)f'` curvature term the Laplacian omits under BOTH metrics. **Default off because in
+  ATHAD the correct Jacobian made the projection WORSE** — `div(rho u)/rho` rms 2.7e-02 ->
+  7.7e-02 — with the OLR unmoved), `ATM_PRECIP_CAP` (item 77).
+
+  **Print-only:** the staged `ATM_ICE_CENSUS` (entry / post-adjustment / post-`damp_wiggles` /
+  post-ice-scheme / leaving the block / at the diagnostic), its `canCondense`-violation counter
+  and sample dump, the `P_rain` cap probe and the `S_r` term decomposition (items 74, 77, 78).
+  Plus the zonal ParaView writer's **true-height vertical axis** (item 70): it wrote the vertical
+  coordinate as LEVEL INDEX, which on an exponentially stretched grid distorts by ~18x and varies
+  with altitude, so no ParaView aspect setting could undo it — contours, glyph angles and
+  streamline curvature all inherited it. The glyph vector was also scaled `1/u_0` where the
+  scalars beside it used `u_0` (64x, direction unaffected) and was raw m/s on an index-space
+  geometry; `uv_plot` now carries the field in plot units per day. **No physics reads these
+  fields**, so no computed result changes — but any conclusion drawn by eye from an older zonal
+  plot should be re-examined. `psicheck.py`, `survival.py` and `mksweeps.py` come with it,
+  adapted to this tree's `im = 61` and config name.
+
+  **Deliberately NOT ported.** `ATM_SKIN_TAU` (item 73) was measured in ATHAD and **withdrawn**:
+  `T_rad(tau)` exceeds the prescribed profile at all 41 levels there, so there is no
+  radiative-convective crossing to switch at, and the whole-column form runs away to 15 599 K in
+  four iterations. It also presumes ATHAD's isothermal lid over a prescribed DRY adiabat and its
+  `ATM_PROGNOSTIC_T` knob; this tree has neither — invariant 4 here is a MOIST, state-dependent
+  adiabat. `moist_phys_start_iter = 0` (item 74) has been this tree's default since the fork.
+
+  **Verification done: both trees build clean and `make test` passes with 0 failures.**
+  **Verification NOT done: no A/B has been run in either tree.** The four defaults above are
+  argued, not measured, here. Do not quote an OLR, a `Psi`, a photosphere or a condensate figure
+  from this tree against a pre-port number until the pair has been run.
+
 - **The saturation-adjustment knobs are ported, and this fork is the control that settles what
   `alpha_entry` is worth** (ATHAD README item 64). `ATM_SAT_TRACE=1` (print-only) and
   `ATM_SAT_NO_ALPHA=1` (default off); the traced levels default to 20 (10.8 km) and 48 (63 km,

@@ -271,8 +271,9 @@ public:
 
                 geo.rm           = m.rad.z[i];
                 geo.rm2          = geo.rm * geo.rm;
-                geo.exp_rm       = 1.0 / (geo.rm + 1.0);
+                geo.exp_rm       = m.metricExpRm(geo.rm);
                 geo.exp_2_rm     = geo.exp_rm * geo.exp_rm;
+                geo.curv         = m.metricCurv(geo.rm);
                 geo.sinthe       = sinthe_table[j];
                 geo.sinthe2      = geo.sinthe * geo.sinthe;
                 geo.costhe       = cos(m.the.z[j]);
@@ -309,8 +310,17 @@ public:
                 // and dp/dr_physical = exp_rm * dp/d(rad.z) — hence exp_2_rm, matching the
                 // Laplacian's radial term. Zero when the knob is off, so denom, num1..num3
                 // and the update below are untouched.
-                const double num_a = anelastic
-                                   ? geo.exp_2_rm * dlnrho[i] * inv_2dr : 0.0;
+                //
+                // README item 80 folds the METRIC CURVATURE into the same term. The radial
+                // Laplacian on the stretched grid is exp_2_rm*(p'' - curv*p'), so the operator
+                // carries a first-derivative coefficient of -curv alongside the anelastic
+                // +dln(rho_bar)/dr. Both are the same shape and share the (p[i+1]-p[i-1])
+                // off-diagonal, so no new stencil: the coefficient is simply (dlnrho - curv).
+                // curv = 0 on the legacy metric, so this is bit-identical unless
+                // ATM_METRIC_EXACT is set. Diagonal dominance is unaffected -- the added
+                // ratio to num1 is curv*dr/2 = 0.0375 at zeta = 3.
+                const double dlnrho_i = anelastic ? dlnrho[i] : 0.0;
+                const double num_a = geo.exp_2_rm * (dlnrho_i - geo.curv) * inv_2dr;
 
                 const bool i_in_range = (i < m.im-2);
                 const bool j_inner    = (j > 2) && (j < m.jm-2);
@@ -656,7 +666,7 @@ public:
             for (int i = 1; i < m.im-1; i++) {
                 for (int j = 1; j < m.jm-1; j++) {
                     const double rm      = m.rad.z[i];
-                    const double exp_rm  = 1.0 / (rm + 1.0);
+                    const double exp_rm  = m.metricExpRm(rm);
                     const double rmet    = m.metricRadius(rm);
                     const double sinthe  = sinthe_table[j];
                     const double inv_rm  = 1.0 / rmet;
@@ -720,7 +730,9 @@ public:
     // projection pressure; we then apply v ← v − ∇p in the same metric form used
     // by the time-stepping RHS, and reset p_dyn to 0 so the next RK4 call does not
     // double-correct via its own −∂p/∂r term.
-    // ATM_PROJ_SWEEPS — relaxation sweeps PER PASS of the initial projection, default 1.
+    // ATM_PROJ_SWEEPS — relaxation sweeps PER PASS of the initial projection.
+    // **DEFAULT 10 SINCE 2026-08-22 (README item 68). It was 1, and every number recorded
+    // before that date was produced with 1; `ATM_PROJ_SWEEPS=1` restores that branch exactly.**
     //
     // THIS EXISTS BECAUSE THE TWO COUNTS WERE ENTANGLED AND THE ENTANGLEMENT CORRUPTED A
     // MEASUREMENT. This routine makes 200 passes, each a call to run(), and run() honours
@@ -729,15 +741,49 @@ public:
     // differed in their INITIAL STATE as well as in the quantity under test. The 28 % drop in
     // Psi_max first measured that way could not be attributed between the two.
     //
-    // Default 1 restores the historical 200 passes x 1 sweep whatever ATM_PRESS_SWEEPS is set
-    // to, so ATM_PRESS_SWEEPS now varies the time loop ALONE, which is what it was always meant
-    // to do. Raise ATM_PROJ_SWEEPS deliberately to study the initial projection on its own.
+    // This knob is independent of ATM_PRESS_SWEEPS, so that one still varies the time loop
+    // ALONE, which is what it was always meant to do.
+    //
+    // WHY 10 AND NOT 1. One sweep does not converge the projection this routine exists to
+    // perform, and the meridional streamfunction says so quantitatively: Psi(ground) must be
+    // zero (u == 0 at the surface, Psi == 0 at the lid, so the column-integrated meridional
+    // mass flux is forced to vanish) and at one sweep it is 2.09x the interior circulation.
+    //
+    //     ATM_PROJ_SWEEPS      RMS Psi(ground)      vs 1
+    //           1                2.910e+13            -
+    //          10                1.383e+13         -52.5 %
+    //         100                1.284e+13         -55.9 %
+    //
+    // Ten sweeps take essentially all of the recoverable error; a further 10x buys 3.4 points,
+    // so this PLATEAUS rather than closing and ~44 % of the non-closure is structural and
+    // still unexplained. 10 is chosen as the knee, not as a converged value.
+    //
+    // The cost is a one-time startup expense, not per-iteration: the whole projection is 200
+    // passes, and a relaxation sweep is ~0.1 % of a time step.
+    //
+    // THIS CHANGES RESULTS, AND IT CHANGES WHAT Psi_max MEANS. Measured at 40 iterations,
+    // 24 threads, arms identical apart from output_path:
+    //
+    //     RMS Psi(ground) ........ 2.841e13 -> 1.325e13    -53.3 %
+    //     max|Psi| above 20 km ... 4.569e13 -> 5.222e13    +14.3 %   the real circulation
+    //     max|Psi| ANYWHERE ...... 1.057e14 -> 5.222e13    -50.6 %
+    //     closure ratio .......... 0.622    -> 0.254       -59.2 %
+    //
+    // The two maxima COINCIDE on the new default and did not on the old one: the global
+    // maximum of Psi has moved off the ground and into the interior. Shipped at one sweep,
+    // the largest value in the streamfunction was the spurious surface flux, so `Psi_max`
+    // was reporting the defect rather than the circulation. That is why Psi_max falls 50 %
+    // while the circulation it is supposed to measure RISES 14 %.
+    //
+    // Every Psi figure in the README and CLAUDE.md predates this. Do not compare across the
+    // change. The OLR is unmoved (243.43 W/m2 in both arms), consistent with item 27's
+    // finding that a 500x change in the circulation moves it 0.03 %.
     void project_initial_velocity(int n_sweeps = 200)
     {
         static const int proj_sweeps = [](){
             const char* e = getenv("ATM_PROJ_SWEEPS");
-            const int v = e ? atoi(e) : 1;
-            return v > 0 ? v : 1; }();
+            const int v = e ? atoi(e) : 10;
+            return v > 0 ? v : 10; }();
         using namespace std;
         cout << endl << endl << "      ATOM: project_initial_velocity ("
              << n_sweeps << " Jacobi sweeps)" << endl;
@@ -782,7 +828,7 @@ public:
         for (int i = 1; i < m.im-1; i++) {
             for (int j = 1; j < m.jm-1; j++) {
                 const double rm           = m.rad.z[i];
-                const double exp_rm       = 1.0 / (rm + 1.0);   // grid coordinate, not the radius
+                const double exp_rm       = m.metricExpRm(rm);   // grid coordinate, not the radius
                 // The gradient correction must use the SAME metric the source and the RHS use,
                 // or the projection stops being a projection. ATM_METRIC_RADIUS; identity when off.
                 const double rmet         = m.metricRadius(rm);

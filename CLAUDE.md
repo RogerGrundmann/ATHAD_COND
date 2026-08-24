@@ -177,6 +177,46 @@ is what ATHAD does and is only equivalent when the water field is uniform too.
 > number here.
 
 
+> **THE 2026-08-24 PORT FROM ATHAD (its README items 68-80). FOUR DEFAULTS CHANGED, AND NONE OF
+> THE FOUR IS MEASURED IN THIS TREE.** Every number recorded in this file and the README predates
+> the port. They are not retracted -- each of the four is restorable with one environment
+> variable, and the off-branch is written to be identical -- but none of them describes the
+> shipped model until the A/B has been run here.
+>
+> | knob | was | is | ATHAD's finding |
+> |---|---|---|---|
+> | `ATM_PROJ_SWEEPS` | 1 | **10** | the initial pressure projection was under-converged: `Psi(ground)`, which must be 0, was **2.09x the interior circulation**, and 10 sweeps take 52.5 % of that off. A knee, not a cure (item 68) |
+> | `ATM_RAD_DIRECT` | absent | **on** | the closed-form two-stream equilibrium solve, exact in two O(N) passes, replaces the 4-sweep Lambda iteration. `n_lambda = 4` is an Earth constant: **15 % high** on ATHAD's column, and the exact answer costs nothing (items 30, 71). `ATM_N_LAMBDA` is new alongside it |
+> | `ATM_SAT_SUPERHEAT` | absent | **on** | `clampAndFade` tested whether a cell could hold a condensed phase, condensed, added the latent heat that makes the answer FALSE, and never re-tested. The ice scheme deleted the result every iteration. **The largest single effect ATHAD has recorded: OLR -49.4 %** (item 75) |
+> | `ATM_PRECIP_BANDS` | absent | **on** | the precipitation phase bands were Earth's, and they did two jobs at once: `(band) ? (inherited + produced) : 0` DESTROYS a flux arriving from above rather than only withholding production. Snow's -20 C floor goes; the inherited flux always passes (item 76) |
+>
+> **Why they ship on rather than off.** Each is a repair whose ARGUMENT is universal -- a
+> projection that has not converged, a relaxation that has not converged, a routine disagreeing
+> with `IceSchemeCommon::canCondense` about where a phase can exist, a flux destroyed by the
+> temperature of the air it falls through. **The SIZES are ATHAD's 250 bar column and do not
+> transfer**: this atmosphere is a different pressure and a different temperature, so how far
+> 4 Lambda sweeps fall short, and how many cells the superheat guard rejects, are open questions
+> here. Restore the old branch with
+> `ATM_PROJ_SWEEPS=1 ATM_RAD_DIRECT=0 ATM_SAT_SUPERHEAT=0 ATM_PRECIP_BANDS=0`.
+>
+> **Default-off knobs ported with it, off-branch bit-identical:** `ATM_CELL_ALTERNATE` (item 69 --
+> four of five prescribed cells turn the same way, and `edgeRadialCoeff` already assumes the
+> parity it does not impose), `ATM_METRIC_EXACT` (item 80 -- `exp_rm = 1/(rm+1)` is a QUADRATIC
+> stretch's Jacobian applied to an exponential grid; the repair also adds the `-(J'/J)f'`
+> curvature term the Laplacian omits in both metrics. **Default off because in ATHAD the correct
+> Jacobian made the projection WORSE**), `ATM_PRECIP_CAP` (item 77). Print-only: the `ATM_ICE_CENSUS`
+> stages, the `canCondense`-violation counter, the `P_rain` cap probe and the `S_r` decomposition
+> (items 74, 77, 78), and the zonal ParaView writer's **true-height vertical axis** (item 70 --
+> it was level index, which on this stretched grid distorts by ~18x and varies with altitude, so
+> no aspect setting could undo it; no physics reads those fields).
+>
+> **Deliberately NOT ported.** `ATM_SKIN_TAU` (item 73): measured in ATHAD and **withdrawn** --
+> `T_rad(tau)` exceeds the prescribed profile at all 41 levels there, so there is no
+> radiative-convective crossing to switch at. It also presumes ATHAD's isothermal lid over a
+> prescribed dry adiabat and its `ATM_PROGNOSTIC_T` knob, and this tree has neither: its adiabat
+> is moist and state-dependent. `moist_phys_start_iter = 0` (item 74) is already the default here
+> and has been since the fork.
+
 Measured; see the README for the full items.
 
 - **Saturated troposphere 62 km deep.** 511 K at the sea, 429 K at 18 km, 280 K at 60 km;

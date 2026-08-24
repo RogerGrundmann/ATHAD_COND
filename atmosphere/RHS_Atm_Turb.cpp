@@ -34,6 +34,9 @@ void cAtmosphereModel::RHS_Atmosphere_Turb(int i, int j, int k, const CellGeomet
     // NO sin(), cos(), division, or reciprocal computation here.
     const double exp_rm             = geo.exp_rm;
     const double exp_2_rm           = geo.exp_2_rm;
+    // README item 80: d2f/dz2 = exp_2_rm*(f'' - curv*f'). curv is 0 on the legacy metric,
+    // so every expression below is bit-identical unless ATM_METRIC_EXACT is set.
+    const double curv               = geo.curv;
     const double sinthe             = geo.sinthe;
     const double sinthe2            = geo.sinthe2;
     const double costhe             = geo.costhe;
@@ -876,21 +879,21 @@ void cAtmosphereModel::RHS_Atmosphere_Turb(int i, int j, int k, const CellGeomet
     // missed here — it over-damped v,w in the NH and anti-diffused poleward of ~38°S.
     double v_metric         = (1.0 + costhe * costhe / sinthe2) * inv_rm2;
 
-    double diffusion_t = (d2tdr2 * exp_2_rm + dtdr * two_over_rm_exp
+    double diffusion_t = ((d2tdr2 - curv * dtdr) * exp_2_rm + dtdr * two_over_rm_exp
         + d2tdthe2 * inv_rm2 + dtdthe * cos_rm2sin
         + d2tdphi2 * inv_rm2sinthe2) * diffusion_t_re;
 
-    double diffusion_u = (d2udr2 * exp_2_rm + 2.0 * u_ijk * inv_rm2
+    double diffusion_u = ((d2udr2 - curv * dudr) * exp_2_rm + 2.0 * u_ijk * inv_rm2
         + d2udthe2 * inv_rm2 + 4.0 * dudr * inv_rm * exp_rm
         + dudthe * cos_rm2sin + d2udphi2 * inv_rm2sinthe2) * diffusion_vel_re;
 
-    double diffusion_v = (d2vdr2 * exp_2_rm + dvdr * two_over_rm_exp
+    double diffusion_v = ((d2vdr2 - curv * dvdr) * exp_2_rm + dvdr * two_over_rm_exp
         + d2vdthe2 * inv_rm2 + dvdthe * cos_rm2sin
         - v_metric * v_ijk + d2vdphi2 * inv_rm2sinthe2
         + 2.0 * dudthe * inv_rm2
         - dwdphi * 2.0 * costhe * inv_rm2sinthe2) * diffusion_vel_re;
 
-    double diffusion_w = (d2wdr2 * exp_2_rm + dwdr * two_over_rm_exp
+    double diffusion_w = ((d2wdr2 - curv * dwdr) * exp_2_rm + dwdr * two_over_rm_exp
         + d2wdthe2 * inv_rm2 + dwdthe * cos_rm2sin
         - v_metric * w_ijk + d2wdphi2 * inv_rm2sinthe2
         + 2.0 * dudphi * inv_rm2sinthe
@@ -921,36 +924,36 @@ void cAtmosphereModel::RHS_Atmosphere_Turb(int i, int j, int k, const CellGeomet
     const double dlnrho_dr_i = (tracer_diff_flux && (int)m_dlnrho_dr.size() == im)
                              ? m_dlnrho_dr[i] * exp_2_rm : 0.0;
 
-    double diffusion_c = (d2cdr2 * exp_2_rm + dcdr * two_over_rm_exp
+    double diffusion_c = ((d2cdr2 - curv * dcdr) * exp_2_rm + dcdr * two_over_rm_exp
         + d2cdthe2 * inv_rm2 + dcdthe * cos_rm2sin
         + d2cdphi2 * inv_rm2sinthe2
         + dcdr * dlnrho_dr_i) * diff_prec_re_inv;
 
-    double diffusion_cloud = (d2clouddr2 * exp_2_rm + dclouddr * two_over_rm_exp
+    double diffusion_cloud = ((d2clouddr2 - curv * dclouddr) * exp_2_rm + dclouddr * two_over_rm_exp
         + d2clouddthe2 * inv_rm2 + dclouddthe * cos_rm2sin
         + d2clouddphi2 * inv_rm2sinthe2
         + dclouddr * dlnrho_dr_i) * diff_prec_re_inv;
 
-    double diffusion_ice = (d2icedr2 * exp_2_rm + dicedr * two_over_rm_exp
+    double diffusion_ice = ((d2icedr2 - curv * dicedr) * exp_2_rm + dicedr * two_over_rm_exp
         + d2icedthe2 * inv_rm2 + dicedthe * cos_rm2sin
         + d2icedphi2 * inv_rm2sinthe2
         + dicedr * dlnrho_dr_i) * diff_prec_re_inv;
 
-    double diffusion_g = (d2gdr2 * exp_2_rm + dgdr * two_over_rm_exp
+    double diffusion_g = ((d2gdr2 - curv * dgdr) * exp_2_rm + dgdr * two_over_rm_exp
         + d2gdthe2 * inv_rm2 + dgdthe * cos_rm2sin
         + d2gdphi2 * inv_rm2sinthe2
         + dgdr * dlnrho_dr_i) * diff_prec_re_inv;
 
-    double diffusion_co2 = (d2codr2 * exp_2_rm + dcodr * two_over_rm_exp
+    double diffusion_co2 = ((d2codr2 - curv * dcodr) * exp_2_rm + dcodr * two_over_rm_exp
         + d2codthe2 * inv_rm2 + dcodthe * cos_rm2sin
         + d2codphi2 * inv_rm2sinthe2
         + dcodr * dlnrho_dr_i) * diff_co2_re_inv;
 
-    double diffusion_tke = (d2tkedr2 * exp_2_rm + dtkedr * two_over_rm_exp
+    double diffusion_tke = ((d2tkedr2 - curv * dtkedr) * exp_2_rm + dtkedr * two_over_rm_exp
         + d2tkedthe2 * inv_rm2 + dtkedthe * cos_rm2sin
         + d2tkedphi2 * inv_rm2sinthe2) * diffusion_tke_re;
 
-    double diffusion_dis = (d2disdr2 * exp_2_rm + ddisdr * two_over_rm_exp
+    double diffusion_dis = ((d2disdr2 - curv * ddisdr) * exp_2_rm + ddisdr * two_over_rm_exp
         + d2disdthe2 * inv_rm2 + ddisdthe * cos_rm2sin
         + d2disdphi2 * inv_rm2sinthe2) * diffusion_dis_re;
 

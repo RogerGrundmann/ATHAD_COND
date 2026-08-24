@@ -22,6 +22,7 @@
 #include "TwoCatIceScheme.h"
 #include "ThreeCatIceScheme.h"
 #include "SaturationAdjustment.h"
+#include "IceSchemeCommon.h"
 #include "VelocityInitializer.h"
 #include "PressureSolverAtm.h"
 #include "ThermoAtm.h"
@@ -141,9 +142,15 @@ static void iceCensusFn(cAtmosphereModel& m, const char* where)
         double T_ci_min = 1.0e30, T_ci_max = 0.0;
         long long n_cw = 0, n_cw_sub273 = 0, n_cw_sub236 = 0;
         long long n_ci = 0, n_cold = 0, n_cells = 0;
+        // ATHAD item 74 follow-up: condensate sitting where IceSchemeCommon::canCondense
+        // says no condensed phase can exist (supercritical, or superheated with p_sat > p).
+        // The ice scheme evaporates exactly these, so counting them at each stage says WHICH
+        // routine puts them there — the attribution item 74 left unmeasured.
+        long long n_forbid = 0, n_forbid_crit = 0;
+        double q_forbid = 0.0;
         #pragma omp parallel for collapse(2) schedule(static) \
                 reduction(min:T_cw_min,T_ci_min) reduction(max:T_cw_max,T_ci_max) \
-                reduction(+:n_cw,n_cw_sub273,n_cw_sub236,n_ci,n_cold,n_cells)
+                reduction(+:n_cw,n_cw_sub273,n_cw_sub236,n_ci,n_cold,n_cells,n_forbid,n_forbid_crit,q_forbid)
         for(int i = 0; i < m.im; i++){
             for(int j = 0; j < m.jm; j++){
                 for(int k = 0; k < m.km; k++){
@@ -164,11 +171,48 @@ static void iceCensusFn(cAtmosphereModel& m, const char* where)
                         T_ci_min = std::min(T_ci_min, T);
                         T_ci_max = std::max(T_ci_max, T);
                     }
+                    const double q_cond = std::max(0.0, cw) + std::max(0.0, ci)
+                                        + std::max(0.0, m.gr.x[i][j][k]);
+                    if(q_cond > q_thr && !IceSchemeCommon::canCondense(m, T, i, j, k)){
+                        n_forbid++;
+                        q_forbid += q_cond;
+                        if(T >= AtmMixture::T_CRIT_H2O) n_forbid_crit++;
+                    }
                 }
             }
         }
         cout << "      AGCM: ice census [" << where << "] — cells " << n_cells
              << ",  T < 273.15 K in " << n_cold << endl;
+        {   // Sample a few offending cells with every quantity the two predicates use,
+            // because two derivations from the source have already been wrong about why.
+            int shown = 0;
+            for(int i = 0; i < m.im && shown < 3; i++)
+              for(int j = 0; j < m.jm && shown < 3; j++)
+                for(int k = 0; k < m.km && shown < 3; k++){
+                    const double T = m.t.x[i][j][k] * m.t_0;
+                    const double q_cond = std::max(0.0, m.cloud.x[i][j][k])
+                                        + std::max(0.0, m.ice.x[i][j][k])
+                                        + std::max(0.0, m.gr.x[i][j][k]);
+                    if(q_cond <= q_thr || IceSchemeCommon::canCondense(m, T, i, j, k)) continue;
+                    const double M_other = AtmMixture::M_nonwater(m.c.x[i][j][k],
+                                              m.co2.x[i][j][k], m.m_comp.M_bg);
+                    const double p_l   = m.p_stat.x[i][j][k];
+                    const double E_liq = SaturationH2O::saturationPressure(T);
+                    const double E_aut = SaturationH2O::saturationPressureAuto(T);
+                    printf("            forbid sample [%d][%d][%d]  T=%.2f K  p=%.4g hPa"
+                           "  E_liq=%.4g  E_auto=%.4g  qsat_liq=%.6f  qsat_auto=%.6f"
+                           "  q_v=%.6f  q_cond=%.6g\n",
+                           i, j, k, T, p_l, E_liq, E_aut,
+                           SaturationH2O::saturationMassFraction(E_liq, p_l, M_other),
+                           SaturationH2O::saturationMassFraction(E_aut, p_l, M_other),
+                           m.c.x[i][j][k], q_cond);
+                    shown++;
+                }
+        }
+        cout << "            CONDENSATE WHERE canCondense IS FALSE: " << n_forbid
+             << " cells (" << n_forbid_crit << " supercritical, "
+             << (n_forbid - n_forbid_crit) << " superheated),  total q = "
+             << q_forbid << " kg/kg" << endl;
         cout << "            cloud water in " << n_cw << " cells, T range "
              << std::fixed << std::setprecision(1)
              << (n_cw ? T_cw_min : 0.0) << " .. " << (n_cw ? T_cw_max : 0.0)
@@ -777,7 +821,7 @@ void cAtmosphereModel::checkRadialMetric() const {
 
     for(int i = 1; i < im-1; i++){
         const double rm     = rad.z[i];
-        const double exp_rm = 1.0 / (rm + 1.0);
+        const double exp_rm = metricExpRm(rm);
         const double dz2    = m_layer_heights[i+1] - m_layer_heights[i-1];       // [m]
         if(!(dz2 > 0.0)) continue;
 
@@ -1614,6 +1658,7 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                 // everything after it is condensation, the ice scheme and the limiters.
                 ThermoAtm(*this).waterBudget(iter_n % diagnosticStride() == 0, "post-RK4");
 
+                iceCensusFn(*this, "A0 entering moist block, pre SaturationAdjustment");
                 SaturationAdjustment(*this).run();                      // based on the initial distribution, recomputation of the cloud water and cloud ice formation in case of saturated water vapour detected
 
                 // Sampled HERE as well as after the ice scheme, because this is the state the
@@ -1633,6 +1678,7 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                 AtomUtils::damp_wiggles(c,     &i_topography, true, true, true);
                 AtomUtils::damp_wiggles(cloud, &i_topography, true, true, true);
 
+                iceCensusFn(*this, "A1 post damp_wiggles, pre ice scheme");
                 switch(CategoryIceScheme){                              // rain, snow graupel and precipitation production and reduction
                     case -1: cout << endl << endl << endl               // no CategoryIceScheme used
                         << "  no CategoryIceScheme used" << endl;
@@ -1647,6 +1693,7 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                         break;
                 }
 
+                iceCensusFn(*this, "A2 post ice scheme, pre MoistConvection");
                 AtomUtils::damp_wiggles(P_rain, &i_topography, true, true, true);
                 AtomUtils::damp_wiggles(P_snow, &i_topography, true, true, true);
 
@@ -1917,6 +1964,7 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                         }
                     }
                 }
+                iceCensusFn(*this, "B1 leaving moist block, post cloud_cap clamp");
             }  // moist_phys_active
 
             // ATHAD: water vapour's physical CEILING, enforced EVERY iteration.
@@ -2033,6 +2081,7 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                 // min Psi = 0.000000 at iteration 20). The CSV was always correct; only the
                 // printed extrema and the 3D field were behind.
                 write_meridional_streamfunction(iter_n);   // Hadley/Ferrel cell strength (zonal-mean v + Ψ) per vtk checkpoint
+                iceCensusFn(*this, "B2 at the diagnostic print");
                 print_min_max_atm();
                 UtilsAtm(*this).writeFile(bathymetry_name, output_path, false);
                 cout << endl << "      AGCM: write_file in run_3D_loop atm ......................." << endl;

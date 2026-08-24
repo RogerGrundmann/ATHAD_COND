@@ -105,8 +105,9 @@ void cAtmosphereModel::solveRungeKutta_Atmosphere_Turb(){
 
             geo.rm       = rad.z[i];
             geo.rm2      = geo.rm * geo.rm;
-            geo.exp_rm   = 1.0 / (geo.rm + 1.0);
+            geo.exp_rm   = metricExpRm(geo.rm);
             geo.exp_2_rm = geo.exp_rm * geo.exp_rm;
+            geo.curv     = metricCurv(geo.rm);
 
             geo.sinthe  = sinthe_tbl[j];
             geo.sinthe2 = geo.sinthe * geo.sinthe;

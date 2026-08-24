@@ -104,7 +104,7 @@ public:
 
                     for (int i = 10; i <= 30; i++) {
                         double rm       = m.rad.z[i];
-                        double exp_rm   = 1.0 / (rm + 1.0);
+                        double exp_rm   = m.metricExpRm(rm);
                         double rmsinthe = rm * sinthe;
 
                         double dudr   = (m.u.x[i+1][j][k] - m.u.x[i-1][j][k])

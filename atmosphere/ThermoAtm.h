@@ -75,7 +75,7 @@ public:
                     }
 
                     double rm           = m.rad.z[i];
-                    double exp_rm       = 1.0 / (rm + 1.0);
+                    double exp_rm       = m.metricExpRm(rm);
                     double inv_rm       = 1.0 / rm;
                     double inv_rmsinthe = 1.0 / (rm * sinthe);
 
@@ -576,7 +576,7 @@ public:
             for (int j = 1; j < m.jm-1; j++) {
 
                 double rm           = m.rad.z[i];
-                double exp_rm       = 1.0 / (rm + 1.0);
+                double exp_rm       = m.metricExpRm(rm);
                 double inv_rm       = 1.0 / rm;
                 double sinthe       = sinthe_table[j];
                 double costhe       = costhe_table[j];

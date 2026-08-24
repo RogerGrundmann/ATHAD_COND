@@ -32,9 +32,13 @@ public:
         cout.precision(9);
 
         computeSteps();
+        reportGuard("entry");
         adjustSaturation();
+        reportGuard("post adjustSat");
         applyTopography();
+        reportGuard("post applyTopo");
         clampAndFade();
+        reportGuard("post clampAndFade");
         printReport();
 
         auto end = std::chrono::high_resolution_clock::now();
@@ -135,6 +139,15 @@ private:
             return (v > 0) ? v : 20; }();
         return n;
     }
+
+    // ATHAD README item 75 — reject a condensation step whose own latent heating leaves the
+    // cell SUPERHEATED, i.e. in a state IceSchemeCommon::canCondense forbids and
+    // ThreeCatIceScheme then undoes. DEFAULT ON; ATM_SAT_SUPERHEAT=0 restores the old
+    // behaviour. See the two guarded write-backs below for the argument.
+    // Liveness counters — is the guarded write-back even reached?
+    static inline long long g_sat_reached = 0, g_sat_rejected = 0;
+    static inline const bool sat_superheat_guard = [](){
+        const char* e = getenv("ATM_SAT_SUPERHEAT"); return e ? (atoi(e) != 0) : true; }();
 
     void computeSteps() {
         step.resize(m.im);
@@ -448,6 +461,45 @@ private:
                         // where the phase it is condensing into ceases to exist.
                         if (T > AtmMixture::T_CRIT_H2O) T = AtmMixture::T_CRIT_H2O;
 
+                        // ATHAD item 75: THE SAME ARGUMENT, APPLIED TO THE OTHER HALF OF THE
+                        // CONDITION. The cap above is the critical temperature; but a cell
+                        // stops being able to hold a condensed phase as soon as it is
+                        // SUPERHEATED — p_sat(T) > p, so the vapour cannot reach saturation
+                        // however much of it there is — and that happens far below 647 K.
+                        // Measured at 461.15 K and 51.18 hPa, where E_sat = 12 010 hPa.
+                        //
+                        // The loop was reaching those states BY ITS OWN LATENT HEATING: across
+                        // one call the cloud-bearing cells' temperature range went
+                        // 270.5-316.7 K -> 275.3-585.3 K, and the census afterwards found
+                        // 130 678 cells holding 6 520 kg/kg of condensate that
+                        // IceSchemeCommon::canCondense rules impossible. ThreeCatIceScheme
+                        // then evaporated all of it, correctly, every iteration — work done
+                        // and undone, invisible because the diagnostics print after the whole
+                        // moist block (README item 74).
+                        //
+                        // The predicate is IceSchemeCommon's, not a second opinion: the two
+                        // routines must agree about where a condensed phase can exist. The
+                        // step is REJECTED rather than evaporated here — the cell returns to
+                        // its entry state and evaporateWhereImpossible removes the condensate
+                        // with the latent cooling it already accounts for, so the energy
+                        // bookkeeping stays in one place.
+                        //
+                        // ATM_SAT_SUPERHEAT=0 restores the old behaviour; off-branch identical.
+                        if (sat_superheat_guard) {
+                            const double q_sat_new = SaturationH2O::saturationMassFraction(
+                                SaturationH2O::saturationPressureAuto(T), p_local, M_other);
+                            #pragma omp atomic
+                            g_sat_reached++;
+                            if (!(q_sat_new < 1.0)) {
+                                #pragma omp atomic
+                                g_sat_rejected++;
+                                q_v_b = q_v_old;
+                                q_c_b = q_c_old;
+                                q_i_b = q_i_old;
+                                T     = T_original;
+                            }
+                        }
+
                         if (!std::isnan(T) && !std::isnan(q_v_b)) {
                             S_c_c_row[k] = alpha_entry * (q_c_b - q_c_old) / dt_dim;
                             c_row[k]     = q_v_old + alpha_entry * (q_v_b - q_v_old);
@@ -464,6 +516,31 @@ private:
                 }
             }
         }
+    }
+
+    // Print-only, and only under ATM_ICE_CENSUS: counts condensate sitting where
+    // IceSchemeCommon::canCondense forbids it, at each stage of this routine. This is the
+    // instrument item 75 was found with.
+    void reportGuard(const char* where) const {
+        static const bool verbose = [](){
+            const char* e = getenv("ATM_ICE_CENSUS"); return e && atoi(e) != 0; }();
+        if (!verbose) { g_sat_reached = g_sat_rejected = 0; return; }
+        long long n_forbid = 0; double q_forbid = 0.0;
+        #pragma omp parallel for collapse(2) schedule(static) reduction(+:n_forbid,q_forbid)
+        for (int i = 0; i < m.im; i++)
+            for (int j = 0; j < m.jm; j++)
+                for (int k = 0; k < m.km; k++) {
+                    const double T = m.t.x[i][j][k] * m.t_0;
+                    const double q = std::max(0.0, m.cloud.x[i][j][k])
+                                   + std::max(0.0, m.ice.x[i][j][k])
+                                   + std::max(0.0, m.gr.x[i][j][k]);
+                    if (q > 1.0e-6 && !IceSchemeCommon::canCondense(m, T, i, j, k)) {
+                        n_forbid++; q_forbid += q;
+                    }
+                }
+        std::printf("      SAT GUARD [%-18s] reached %lld rejected %lld | forbidden cells %lld, q %.4g\n",
+                    where, g_sat_reached, g_sat_rejected, n_forbid, q_forbid);
+        g_sat_reached = g_sat_rejected = 0;
     }
 
     void applyTopography() {
@@ -602,6 +679,12 @@ private:
                     const double q_sat = SaturationH2O::saturationMassFraction(
                                              E_sat, p_local, M_other);
                     if (c_row[k] > q_sat) {
+                        // item 75: keep the entry state so a step that lands in an
+                        // impossible one can be rejected below.
+                        const double c_pre     = c_row[k];
+                        const double cloud_pre = cloud_row[k];
+                        const double ice_pre   = ice_row[k];
+                        const double T_pre     = T_dim;
                         const double excess = c_row[k] - q_sat;
                         c_row[k] = q_sat;
                         if (T_dim >= m.t_00) {
@@ -617,6 +700,41 @@ private:
                         }
                         if (T_dim > T_max) T_dim = T_max;   // backstop on the latent release
                         t_row_nd[k] = T_dim * inv_t_0;
+
+                        // ITEM 75: THE IMPOSSIBILITY TEST ABOVE WAS APPLIED TO THE ENTRY
+                        // TEMPERATURE, AND THIS BLOCK CHANGES IT.
+                        //
+                        // The removal condenses `excess` and adds its latent heat to T_dim.
+                        // Raising T raises E_sat, and once E_sat exceeds the local pressure
+                        // the cell is SUPERHEATED: no condensed phase can exist in it, so
+                        // the cloud/ice just written there is a state the guard forty lines
+                        // above would have refused. Nothing re-tested it, so the step stood.
+                        //
+                        // Measured (README item 75): this loop alone put condensate into
+                        // 130 678 cells holding 6 520 kg/kg that canCondense forbids, every
+                        // iteration, and ThreeCatIceScheme::computeColumns evaporated all of
+                        // it again through evaporateWhereImpossible. Work done and undone,
+                        // invisible because the diagnostics print after the whole moist block.
+                        //
+                        // The step is REJECTED whole rather than partially applied. Condensing
+                        // only as far as E_sat(T) = p would need the joint solve
+                        // adjustSaturation's Newton loop does, and that is a bigger change
+                        // than this: what a rejected cell keeps is its supersaturation, which
+                        // is the honest state of a parcel that cannot condense (item 64), not
+                        // a manufactured phase the next routine has to delete.
+                        //
+                        // ATM_SAT_SUPERHEAT=0 restores the old behaviour.
+                        if (sat_superheat_guard) {
+                            const double q_sat_post = SaturationH2O::saturationMassFractionAt(
+                                                          T_dim, p_local, M_other);
+                            if (T_dim >= AtmMixture::T_CRIT_H2O || !(q_sat_post < 1.0)) {
+                                c_row[k]     = c_pre;
+                                cloud_row[k] = cloud_pre;
+                                ice_row[k]   = ice_pre;
+                                T_dim        = T_pre;
+                                t_row_nd[k]  = T_dim * inv_t_0;
+                            }
+                        }
                     }
 
                     // ---- Condensate upper bounds (CAP SAFETY NET) ----

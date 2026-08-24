@@ -187,7 +187,8 @@ public:
 
 
     struct CellGeometry {                                                                                                                                                                                            
-        double rm, rm2, exp_rm, exp_2_rm;                                                                                                                                                                              
+        double rm, rm2, exp_rm, exp_2_rm;
+        double curv;          // J'/J: the curvature term in d2f/dz2 = exp_2_rm*(f'' - curv*f'). See metricCurv().                                                                                                                                                                              
         double sinthe, sinthe2, costhe;                                                                                                                                                                                
         double inv_rm, inv_rm2;
         double inv_rmsinthe, inv_rm2sinthe, inv_rm2sinthe2;
@@ -495,6 +496,51 @@ private:
         const double span = rad.z[im-1] - rad.z[0];
         if(!(span > 0.0)) return L_atm;
         return (exp(zeta * span) - 1.0) * L_atm / span;
+    }
+
+    // ================= THE RADIAL METRIC (README item 80) =================
+    //
+    // `exp_rm` is documented in TurbulenceAtm.h and PressureSolverAtm.h as the Jacobian of the
+    // radial coordinate transformation. It is written `1/(rm+1)`, which is the Jacobian of a
+    // QUADRATIC stretch z ~ (rm+1)^2/2, while init_layer_heights() above builds an EXPONENTIAL
+    // one, z = (exp(zeta*(r-r0)) - 1)*L_atm. So every radial derivative in the core is
+    // mis-scaled by a factor that varies across the column: 6.36 against 0.5 at the surface and
+    // 0.317 against 0.333 at the top, i.e. 12.7x at the bottom and 0.95x at the top.
+    // checkRadialMetric() has printed the spread at every startup since item 39.
+    //
+    // The true Jacobian is  J(r) = dz/d(rad.z) = zeta*L_atm*exp(zeta*(r-r0))  [m per rad.z unit],
+    // and the core wants it as a DIMENSIONLESS factor against its own length unit, which is
+    // metricShellLength() - the metres one rad.z unit represents on average.
+    //
+    // AND THE SECOND DERIVATIVE NEEDS A TERM THE CODE DOES NOT HAVE. With e = U/J,
+    //     U^2 * d2f/dz2 = e^2 * ( d2f/dr2 - (J'/J) * df/dr )
+    // and J'/J is `zeta` for the exponential stretch. The core computes `d2f/dr2 * exp_2_rm`
+    // and stops, so the curvature term is missing in BOTH metrics - it is small under the
+    // legacy one (J'/J = 1/(rm+1) <= 0.5) and the same order as the retained term under the
+    // true one, since zeta = 3. metricCurv() returns 0 on the legacy branch so that branch
+    // stays bit-identical; the missing legacy term is a separate, smaller defect, recorded
+    // rather than silently fixed.
+    //
+    // ATM_METRIC_EXACT=1 switches to the true Jacobian. DEFAULT OFF: this moves every radial
+    // derivative in the model and item 39 asks for the measurement before the flip.
+    static bool metricExact(){
+        static const bool v = [](){
+            const char* e = getenv("ATM_METRIC_EXACT"); return e && atoi(e) != 0; }();
+        return v;
+    }
+
+    // The dimensionless radial Jacobian factor a first derivative is multiplied by.
+    double metricExpRm(double rm) const {
+        if(!metricExact()) return 1.0 / (rm + 1.0);
+        const double J = zeta * L_atm * exp(zeta * (rm - rad.z[0]));    // [m per rad.z unit]
+        return (J > 0.0) ? (metricShellLength() / J) : (1.0 / (rm + 1.0));
+    }
+
+    // J'/J, the coefficient of the curvature term in d2f/dz2 = e^2*(f'' - curv*f').
+    // Zero on the legacy branch, so the legacy operator is unchanged to the bit.
+    double metricCurv(double rm) const {
+        (void)rm;
+        return metricExact() ? zeta : 0.0;
     }
 
     void init_topography();                                             // ATHAD: flat featureless surface, no file read
