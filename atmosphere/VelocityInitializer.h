@@ -257,13 +257,35 @@ private:
     // jets as well as the cells and confound the measurement. This is a change to the
     // MERIDIONAL CIRCULATION only.
     //
-    // Default OFF, so every number recorded before this knob is reproducible and the
-    // off-branch is bit-identical. n <= 2 is unaffected either way (cell 0 is already
-    // direct and cell 1, if present, is already the polar/indirect one).
+    // **DEFAULT ON SINCE 2026-08-24; `ATM_CELL_ALTERNATE=0` restores the co-rotating stack
+    // exactly.** n <= 2 is unaffected either way (cell 0 is already direct and cell 1, if
+    // present, is already the polar/indirect one).
+    //
+    // FLIPPED HERE ON ATHAD_PERID'S MEASUREMENT, NOT ON ONE MADE IN THIS TREE. There
+    // (n_cells_hemisphere = 5, 40 iterations, 24 threads) the prescribed sequence went
+    //
+    //   off: direct(-3.0) / indir.(4.0) / indir.(4.0) / indir.(4.0) / indir.(0.5)   1 of 4 pairs
+    //   on:  direct(-3.0) / indir.(4.0) / direct(-4.0) / indir.(4.0) / direct(-0.5) 4 of 4 pairs
+    //
+    // and the SIGN BANDS of Psi across the northern hemisphere went from 1/1/1/2/2/2 to
+    // 4/4/4/5/4/4 at 0/2/5/9/15/22 km, stable at iterations 20 and 40 -- a genuine multi-cell
+    // circulation where there had been a single-signed drift. Scalars barely moved: OLR and
+    // the photosphere identical, RMS Psi(ground) -8.4 per cent, closure ratio 2.404 -> 2.201,
+    // and div(rho u)/rho 3.5 per cent WORSE.
+    //
+    // **NOTE Psi_max AND max Psi(ground) WERE BIT-IDENTICAL ACROSS THAT PAIR.** The Hadley
+    // cell is k = 0, which is EVEN and therefore already direct, so the knob cannot touch the
+    // cell the maximum lives in. Read this knob through the RMS over latitude and the band
+    // count, never through Psi_max -- ATHAD item 68's method note, confirmed the hard way.
+    //
+    // **NOT MEASURED IN THIS TREE.** This fork is 60 bar over a 513 K sea at 7.74 scale heights; the defect
+    // and its repair transfer, the magnitude does not, and every Psi figure in this README
+    // predates the flip. The A/B is queued.
     // ==================================================================
     static bool alternateCells(){
         static const bool on = [](){
-            const char* e = getenv("ATM_CELL_ALTERNATE"); return e && atoi(e) != 0; }();
+            const char* e = getenv("ATM_CELL_ALTERNATE");
+            return e ? (atoi(e) != 0) : true; }();
         return on;
     }
 
