@@ -1,8 +1,8 @@
 <!-- THIS FILE IS GENERATED AUTOMATICALLY BY param.py. DO NOT EDIT. --><atom>    <common>
-        <output_path>output_Hadean_condensation/</output_path>  <!-- directory where model outputs should be placed(must end in /)(string) -->
+        <output_path>output_trop_verify/</output_path>  <!-- directory where model outputs should be placed(must end in /)(string) -->
         <config_xml_path>../python</config_xml_path>  <!-- directory where the configuration files are located(string) -->
         <verbose>false</verbose>  <!-- some description of the module(bool) -->
-        <paraview_panorama_vts_flag>true</paraview_panorama_vts_flag>  <!-- flag to control if create paraview panorama(bool) -->
+        <paraview_panorama_vts_flag>false</paraview_panorama_vts_flag>  <!-- flag to control if create paraview panorama(bool) -->
         <Coriolis>1</Coriolis>  <!-- Coriolis force(double) -->
         <centrifugal>1</centrifugal>  <!-- centrifugal force(double) -->
         <buoyancy>1</buoyancy>  <!-- buoyancy force(double) -->
@@ -46,14 +46,14 @@
         <inviscid_spinup_iters>0</inviscid_spinup_iters>  <!-- cumulative iterations to run inviscid (Euler + free-slip mountains) before viscous physics activates; 0 disables(int) -->
         <inviscid_ramp_iters>20</inviscid_ramp_iters>  <!-- iterations over which diffusion coefficient ramps from 0 to 1 after the inviscid phase(int) -->
         <moist_phys_start_iter>0</moist_phys_start_iter>  <!-- ATHAD_COND: cumulative iterations before moist physics (SaturationAdjustment, ice scheme, MoistConvection) activates; 0 = always on, which is the ATHAD_COND default because condensation is the subject(int) -->
-        <checkpoint_save_iter>300</checkpoint_save_iter>  <!-- dump the full 3D prognostic state to output_path/atm_restart_<iter>.bin when total_iter_count reaches this, for a fast debug restart; -1 disables(int) -->
+        <checkpoint_save_iter>-1</checkpoint_save_iter>  <!-- dump the full 3D prognostic state to output_path/atm_restart_<iter>.bin when total_iter_count reaches this, for a fast debug restart; -1 disables(int) -->
         <restart_from_iter>-1</restart_from_iter>  <!-- load output_path/atm_restart_<iter>.bin and resume from it, skipping the dry spin-up (debug shortcut); -1 disables(int) -->
-        <restart_stride>100</restart_stride>  <!-- ATHAD: iterations between full 3D restart dumps (.bin, ~925 MB each); 0 disables(int) -->
+        <restart_stride>0</restart_stride>  <!-- ATHAD: iterations between full 3D restart dumps (.bin, ~925 MB each); 0 disables(int) -->
         <dt_visc>4e-05</dt_visc>  <!-- non-dimensional time step used in the viscous (production) phase(double) -->
         <dt_inviscid>8e-06</dt_inviscid>  <!-- non-dimensional time step used during the inviscid spin-up phase (smaller to absorb the missing diffusive damping)(double) -->
     </common>
     <atmosphere>
-        <nm>400</nm>  <!-- the maximum number of iterations(int) -->
+        <nm>10</nm>  <!-- the maximum number of iterations(int) -->
         <checkpoint>20</checkpoint>  <!-- control when to write output files(int) -->
         <diagnostic_stride>0</diagnostic_stride>  <!-- ATHAD: iterations between text diagnostics; 0 = auto (10 short / 100 long)(int) -->
         <panorama_print>100</panorama_print>  <!-- control when to write panorama files(int) -->

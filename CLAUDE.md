@@ -203,8 +203,12 @@ is what ATHAD does and is only equivalent when the water field is uniform too.
 > is now measured rather than warned about**: one of the four turned out to be inert here and
 > another turned out to be capped. Restore the old branch with
 > `ATM_PROJ_SWEEPS=1 ATM_RAD_DIRECT=0 ATM_SAT_SUPERHEAT=0 ATM_PRECIP_BANDS=0`.
-> **WHICH of the four moves the OLR is NOT attributed** -- no one-knob arm has been run, and
-> item 75 is excluded only because it is inert.
+> **THE ONE-KNOB DECOMPOSITION IS RUN (2026-08-24) and every effect is single-valued**:
+> the OLR is `ATM_PRECIP_BANDS` (+14.4 %), `ATM_RAD_DIRECT` is +1.6 %, `ATM_PROJ_SWEEPS` and
+> `ATM_SAT_SUPERHEAT` are 0.00; the divergence rise is entirely `ATM_PROJ_SWEEPS`. And the
+> bands effect is TWO INSTRUMENTS AGREEING, not a rise -- the equator-only OLR is 196.6 in
+> every arm while the global mean goes 172.69 -> 197.56, i.e. the extratropics were radiating
+> 12 % below the tropics. See the README.
 >
 > **Default-off knobs ported with it, off-branch bit-identical:** `ATM_CELL_ALTERNATE` (item 69 --
 > four of five prescribed cells turn the same way, and `edgeRadialCoeff` already assumes the

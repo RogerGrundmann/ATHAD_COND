@@ -71,8 +71,8 @@ void cAtmosphereModel::SetDefaultConfig() {
   evap_model = "Meyer";
   L_atm = 6287.5;
   zeta = 3.0;
-  tropopause_pole = 195000.0;
-  tropopause_equator = 207000.0;
+  tropopause_pole = 22000.0;
+  tropopause_equator = 23400.0;
   cell_lat_scale = 0.11;
   cell_amp_mode = 0;
   n_cells_hemisphere = 5;

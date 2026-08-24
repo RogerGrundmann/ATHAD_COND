@@ -1,8 +1,8 @@
 <!-- THIS FILE IS GENERATED AUTOMATICALLY BY param.py. DO NOT EDIT. --><atom>    <common>
-        <output_path>output_Hadean_condensation/</output_path>  <!-- directory where model outputs should be placed(must end in /)(string) -->
+        <output_path>output_port_1k_B/</output_path>  <!-- directory where model outputs should be placed(must end in /)(string) -->
         <config_xml_path>../python</config_xml_path>  <!-- directory where the configuration files are located(string) -->
         <verbose>false</verbose>  <!-- some description of the module(bool) -->
-        <paraview_panorama_vts_flag>true</paraview_panorama_vts_flag>  <!-- flag to control if create paraview panorama(bool) -->
+        <paraview_panorama_vts_flag>false</paraview_panorama_vts_flag>  <!-- flag to control if create paraview panorama(bool) -->
         <Coriolis>1</Coriolis>  <!-- Coriolis force(double) -->
         <centrifugal>1</centrifugal>  <!-- centrifugal force(double) -->
         <buoyancy>1</buoyancy>  <!-- buoyancy force(double) -->
@@ -46,14 +46,14 @@
         <inviscid_spinup_iters>0</inviscid_spinup_iters>  <!-- cumulative iterations to run inviscid (Euler + free-slip mountains) before viscous physics activates; 0 disables(int) -->
         <inviscid_ramp_iters>20</inviscid_ramp_iters>  <!-- iterations over which diffusion coefficient ramps from 0 to 1 after the inviscid phase(int) -->
         <moist_phys_start_iter>0</moist_phys_start_iter>  <!-- ATHAD_COND: cumulative iterations before moist physics (SaturationAdjustment, ice scheme, MoistConvection) activates; 0 = always on, which is the ATHAD_COND default because condensation is the subject(int) -->
-        <checkpoint_save_iter>300</checkpoint_save_iter>  <!-- dump the full 3D prognostic state to output_path/atm_restart_<iter>.bin when total_iter_count reaches this, for a fast debug restart; -1 disables(int) -->
+        <checkpoint_save_iter>-1</checkpoint_save_iter>  <!-- dump the full 3D prognostic state to output_path/atm_restart_<iter>.bin when total_iter_count reaches this, for a fast debug restart; -1 disables(int) -->
         <restart_from_iter>-1</restart_from_iter>  <!-- load output_path/atm_restart_<iter>.bin and resume from it, skipping the dry spin-up (debug shortcut); -1 disables(int) -->
-        <restart_stride>100</restart_stride>  <!-- ATHAD: iterations between full 3D restart dumps (.bin, ~925 MB each); 0 disables(int) -->
+        <restart_stride>0</restart_stride>  <!-- ATHAD: iterations between full 3D restart dumps (.bin, ~925 MB each); 0 disables(int) -->
         <dt_visc>4e-05</dt_visc>  <!-- non-dimensional time step used in the viscous (production) phase(double) -->
         <dt_inviscid>8e-06</dt_inviscid>  <!-- non-dimensional time step used during the inviscid spin-up phase (smaller to absorb the missing diffusive damping)(double) -->
     </common>
     <atmosphere>
-        <nm>400</nm>  <!-- the maximum number of iterations(int) -->
+        <nm>40</nm>  <!-- the maximum number of iterations(int) -->
         <checkpoint>20</checkpoint>  <!-- control when to write output files(int) -->
         <diagnostic_stride>0</diagnostic_stride>  <!-- ATHAD: iterations between text diagnostics; 0 = auto (10 short / 100 long)(int) -->
         <panorama_print>100</panorama_print>  <!-- control when to write panorama files(int) -->
@@ -65,8 +65,8 @@
         <evap_model>Meyer</evap_model>  <!-- evaporation formula driving surface humidity update: Dalton, Meyer, or Rohwer(string) -->
         <L_atm>6287.5</L_atm>  <!-- ATHAD_COND: amplitude of the radial stretch in m; shell = (exp(zeta)-1)*L_atm = 120 km(double) -->
         <zeta>3.0</zeta>  <!-- ATHAD: radial coordinate-stretching factor (was a hard-coded 3.715)(double) -->
-        <tropopause_pole>22000.0</tropopause_pole>  <!-- ATHAD_COND: top of the convective column at the poles in m; 22.0 km set 2026-08-24 from the mass distribution, was 195 km (ATHAD value, clamped to the lid here)(double) -->
-        <tropopause_equator>23400.0</tropopause_equator>  <!-- ATHAD_COND: top of the convective column at the equator in m; 23.4 km set 2026-08-24, was 207 km which is above this shell(double) -->
+        <tropopause_pole>195000.0</tropopause_pole>  <!-- ATHAD: top of the convective column at the poles in m(double) -->
+        <tropopause_equator>207000.0</tropopause_equator>  <!-- ATHAD: top of the convective column at the equator in m(double) -->
         <cell_lat_scale>0.11</cell_lat_scale>  <!-- ATHAD_COND: Hadley-edge latitude as a fraction of Earth's; 0.11 = Held-Hou edge for this rotation rate and contrast, 1.0 = Earth(double) -->
         <cell_amp_mode>0</cell_amp_mode>  <!-- ATHAD_COND: scale the prescribed velocity amplitudes with cell_lat_scale; 0 = off, 1 = v,w by s (continuity), 2 = v by s and w by s^2 (angular momentum)(int) -->
         <n_cells_hemisphere>5</n_cells_hemisphere>  <!-- ATHAD_COND: prescribed circulation cells per hemisphere; 5 = this regime (Rhines ~21 deg bands), 3 = Earth(int) -->

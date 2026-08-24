@@ -533,6 +533,111 @@ over the 1 bar reference". Both describe ATHAD; here it is 60 bar. The code is r
 
 ## Remaining work
 
+- **WHY Psi DOES NOT CLOSE AT THE GROUND, AND THE TROPOPAUSE CONSTANTS THAT CAUSE IT**
+  (2026-08-24). `Psi(i=0)` must be zero: `u` at the surface is 0 and `Psi` at the lid is 0, so
+  the column-integrated meridional MASS flux is forced to vanish. It does not, and the reason
+  is not the solver, not the diagnostic, and not the projection.
+
+  **Psi(ground) can only vanish if the two branches of the cell carry equal and opposite
+  MASS.** Compared at the same latitude (+2 deg) with ATHAD:
+
+  | | v reverses at | **mass above the reversal** | \|net\|/gross |
+  |---|---|---|---|
+  | ATHAD | 49.6 km | **54.9 %** | **0.097** |
+  | this fork (was) | 59.6 km | **0.04 %** | 0.9992 |
+  | ATHAD_PERID (was) | 59.6 km | **0.00 %** | 1.0000 |
+
+  In ATHAD the branches nearly cancel. Here the return branch existed in VELOCITY and not in
+  MASS FLUX, so `Psi(ground)` was the whole circulation by construction. In scale heights the
+  reversal sat at **0.84 H in ATHAD, 3.85 H here, 7.7 H in ATHAD_PERID**.
+
+  **TWO DEFECTS, AND THEY ARE NOT THE SAME SIZE.**
+
+  **(A) `tropopause_equator/pole` were ATHAD's 207/195 km, ABOVE THIS MODEL'S 120 km LID.**
+  Inherited on the fork commit and never re-sized. `height_to_level(207000)` returns 70.5 and
+  clamps to `im-1 = 60`, which the startup line has been printing all along:
+
+      tropopause_pole=195000  pole_index=60.000000  (height 120000.3 m of 120000.3 m)   <- here
+      tropopause_pole=195000  pole_index=35.000000  (height 201275.1 m of 300005.6 m)   <- ATHAD
+
+  Two consequences: the initial wind ramp was stretched over the whole shell, and
+  `VelocityInitializer::init_v_or_w_above_tropopause` opens with `if (tl >= m.im - 1) return;`
+  so **the taper above the tropopause never executed in either fork.** Same defect class as
+  `init_tropopause_layers`'s `round(h / L_atm)`: a height constant that is right in the parent
+  and becomes a wrong level index in a fork with a different shell.
+
+  **(B) `init_v_or_w` is linear in GEOMETRIC HEIGHT**, so the reversal sits at a fixed fraction
+  of the tropopause height while the mass is distributed exponentially. ATHAD's cancellation is
+  a coincidence of its 59 km scale height; this fork's is 15.5 km.
+
+  **MEASURED, 40 iterations, 24 threads, config-only arms:**
+
+  | tropopause | tl | v reverses | mass above | RMS Psi(0) | interior Psi | ratio | Psi_max at | div rms |
+  |---|---|---|---|---|---|---|---|---|
+  | 195/207 km (ATHAD) | **60 = lid** | 59.6 km | 0.04 % | 8.79e12 | 3.58e12 | **2.456** | 0 m | 7.570e-02 |
+  | 70/74.3 km (thermal) | 50 | 40.2 km | 0.80 % | 6.55e12 | 3.03e12 | 2.164 | 0 m | 6.744e-02 |
+  | **22/23.4 km (mass)** | **30** | **7.0 km** | **79.8 %** | 1.03e13 | **1.49e13** | **0.693** | **7.0 km** | **2.825e-02** |
+
+  **Fixing (A) alone is not enough here.** This model's own thermal tropopause is 70 km -- its
+  profile goes isothermal at 221.1 K from level 50 -- and putting it there still leaves only
+  **0.80 %** of the mass above the reversal. It is (B) that governs: placing the tropopause by
+  MASS (p = 0.1 p_surf, 21.9 km) puts 79.8 % above it and
+
+  - the closure ratio falls **2.456 -> 0.693**;
+  - **the global maximum of `Psi` LEAVES THE GROUND for the first time in this fork** (2.74e13
+    at 7.0 km) -- the signature ATHAD item 68 used to argue `Psi_max` had stopped reporting the
+    defect. Here it was still reporting it until now;
+  - the real interior circulation grows **4.1x**;
+  - **`div(rho u)/rho` rms falls 7.570e-02 -> 2.825e-02**, BELOW the pre-port branch's
+    4.864e-02 -- so most of the divergence rise attributed to `ATM_PROJ_SWEEPS` was a symptom
+    of an initial condition carrying a huge mass-flux imbalance, not a cost of the extra sweeps;
+  - the OLR does not move (196.44 -> 196.42), the family's null yet again.
+
+  **22.0/23.4 km IS THE DEFAULT SINCE 2026-08-24**; `tropopause_pole=195000
+  tropopause_equator=207000` restore the old branch exactly. **HONEST CAVEAT, recorded in
+  `param.py` too**: this column is still condensing at 60 km, so 22 km is a good initial-wind
+  scale and a BAD description of the convective top. The parameter does double duty and the two
+  jobs disagree here. **The real repair is to express the cell profile in a mass coordinate**
+  and let the parameter mean what its name says; until then it is set for the job it does.
+  ATHAD_PERID needs no such compromise -- its thermal tropopause IS very nearly a mass one.
+
+- **THE ONE-KNOB DECOMPOSITION OF THE PORT** (2026-08-24, 40 iterations, 24 threads, one binary,
+  each arm turning on exactly ONE knob from the old branch):
+
+  | arm | knob | OLR | delta | div rms | Psi_max |
+  |---|---|---|---|---|---|
+  | old | -- | 172.69 | -- | 4.864e-02 | 40 516 |
+  | P | `ATM_PROJ_SWEEPS=10` | 172.69 | **0.00** | **7.624e-02** | **29 065** |
+  | R | `ATM_RAD_DIRECT` | 175.42 | **+2.73 (+1.6 %)** | 4.863e-02 | 40 501 |
+  | S | `ATM_SAT_SUPERHEAT` | 172.69 | **0.00 (exact null)** | 4.864e-02 | 40 516 |
+  | B | `ATM_PRECIP_BANDS` | **197.56** | **+24.87 (+14.4 %)** | 4.825e-02 | 40 514 |
+  | new | all four | 196.44 | +23.75 | 7.570e-02 | 29 054 |
+
+  **Every effect is single-valued.** The divergence rise is entirely `ATM_PROJ_SWEEPS`; the
+  other three are null to four digits. `ATM_SAT_SUPERHEAT` is an exact null in every printed
+  field, confirming the census end to end. **And the OLR is `ATM_PRECIP_BANDS`, not the
+  radiation solver** -- an earlier reading of the four-knob pair as a solver-convergence effect
+  scaling with optical thickness is **WITHDRAWN**: `ATM_RAD_DIRECT` is 1.6 %, one ninth of it.
+
+  **The bands result is two instruments coming into agreement, not "the OLR rose."** The log
+  carries two independent OLR calculations with the same formula and different domains:
+  `printColumnProfile` at the **equator only** (j = 90, k = 0) and `printPlanetaryBalance` as
+  the **global cos-weighted mean**.
+
+  | | equator column | global mean |
+  |---|---|---|
+  | old | **196.6** | 172.69 |
+  | bands on | **196.6** | 197.56 |
+
+  The equatorial value is identical in every arm to 0.1 W/m2. What changed is **everything
+  except the equator**: the extratropics were radiating 12 % below the tropics and now radiate
+  the same. Supporting evidence: the equatorial column is unchanged to four digits, and
+  `max precipitation total` relocates from 69 deg N at 66.6 km to 61 deg N at the ground.
+  **The microphysical path is NOT established** -- the leading explanation is that the old
+  bands destroyed snow outside 253.15-273.15 K, so condensate accumulated in the colder
+  extratropical upper column instead of falling out, but the per-latitude condensate
+  comparison has not been done and two earlier guesses at this mechanism were wrong.
+
 - **THE ATHAD PORT OF 2026-08-24 (its README items 68-80): four defaults changed, seven knobs
   added, and the measurement is OPEN.** The two trees' physics files are kept name-identical so
   fixes cherry-pick in both directions; this is the second batch to travel (the first was item

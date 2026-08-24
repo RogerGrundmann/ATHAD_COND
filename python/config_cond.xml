@@ -65,8 +65,8 @@
         <evap_model>Meyer</evap_model>  <!-- evaporation formula driving surface humidity update: Dalton, Meyer, or Rohwer(string) -->
         <L_atm>6287.5</L_atm>  <!-- ATHAD_COND: amplitude of the radial stretch in m; shell = (exp(zeta)-1)*L_atm = 120 km(double) -->
         <zeta>3.0</zeta>  <!-- ATHAD: radial coordinate-stretching factor (was a hard-coded 3.715)(double) -->
-        <tropopause_pole>195000.0</tropopause_pole>  <!-- ATHAD: top of the convective column at the poles in m(double) -->
-        <tropopause_equator>207000.0</tropopause_equator>  <!-- ATHAD: top of the convective column at the equator in m(double) -->
+        <tropopause_pole>22000.0</tropopause_pole>  <!-- ATHAD_COND: top of the convective column at the poles in m; 22.0 km set 2026-08-24 from the mass distribution, was 195 km (ATHAD value, clamped to the lid here)(double) -->
+        <tropopause_equator>23400.0</tropopause_equator>  <!-- ATHAD_COND: top of the convective column at the equator in m; 23.4 km set 2026-08-24, was 207 km which is above this shell(double) -->
         <cell_lat_scale>0.11</cell_lat_scale>  <!-- ATHAD_COND: Hadley-edge latitude as a fraction of Earth's; 0.11 = Held-Hou edge for this rotation rate and contrast, 1.0 = Earth(double) -->
         <cell_amp_mode>0</cell_amp_mode>  <!-- ATHAD_COND: scale the prescribed velocity amplitudes with cell_lat_scale; 0 = off, 1 = v,w by s (continuity), 2 = v by s and w by s^2 (angular momentum)(int) -->
         <n_cells_hemisphere>5</n_cells_hemisphere>  <!-- ATHAD_COND: prescribed circulation cells per hemisphere; 5 = this regime (Rhines ~21 deg bands), 3 = Earth(int) -->

@@ -467,8 +467,37 @@ def main():
             # not prescribed.
             # ATHAD: the convective column now ends where the adiabat meets the skin
             # temperature, ~207 km. Above that the atmosphere is isothermal and radiative.
-            ('tropopause_pole', 'ATHAD: top of the convective column at the poles in m', 'double', 195000.0),
-            ('tropopause_equator', 'ATHAD: top of the convective column at the equator in m', 'double', 207000.0),
+            # ATHAD_COND: 22.0/23.4 km SINCE 2026-08-24, MEASURED. These were ATHAD's
+            # 195/207 km -- inherited on the fork commit, and ABOVE THIS MODEL'S 120 km LID.
+            # height_to_level(207000) returns 70.5 and clamps to im-1 = 60, with two
+            # consequences: the initial wind ramp was stretched over the whole shell, and
+            # VelocityInitializer::init_v_or_w_above_tropopause opens with
+            # "if (tl >= m.im - 1) return;" so the taper above the tropopause NEVER RAN.
+            #
+            # WHY 22 km AND NOT THE THERMAL TROPOPAUSE AT 70 km. This parameter does double
+            # duty: it names the top of the convective column AND it sets where the initial
+            # meridional wind reverses, because init_v_or_w is linear in GEOMETRIC HEIGHT
+            # between v_surf and v_trop. Psi(ground) is the column-integrated MASS flux and
+            # can only vanish if the two branches carry equal and opposite mass, so what
+            # matters for the circulation is where the mass is, not where the thermal
+            # structure is. Measured at 40 iterations, 24 threads:
+            #
+            #   tropopause      tl    v reverses   mass above    Psi(0)/Psi(interior)   div rms
+            #   195/207 (ATHAD) 60=lid  59.6 km       0.04 %          2.456            7.570e-02
+            #    70/74 (thermal) 50     40.2 km       0.80 %          2.164            6.744e-02
+            #    22/23 (mass)    30      7.0 km      79.8  %          0.693            2.825e-02
+            #
+            # At 22 km the global maximum of Psi LEAVES THE GROUND for the first time in this
+            # fork (2.74e13 at 7.0 km), the interior circulation grows 4.1x, and div(rho u)/rho
+            # falls BELOW the pre-port branch. The OLR does not move (196.44 -> 196.42).
+            #
+            # HONEST CAVEAT: this column is still condensing at 60 km, so 22 km is a good
+            # initial-wind scale and a BAD description of the convective top. The real repair
+            # is to express the cell profile in a mass coordinate and let this parameter mean
+            # what its name says; until then it is set for the job it actually does.
+            # ATHAD's 195000/207000 restore the old branch exactly.
+            ('tropopause_pole', 'ATHAD_COND: top of the convective column at the poles in m; 22.0 km set 2026-08-24 from the mass distribution, was 195 km (ATHAD value, clamped to the lid here)', 'double', 22000.0),
+            ('tropopause_equator', 'ATHAD_COND: top of the convective column at the equator in m; 23.4 km set 2026-08-24, was 207 km which is above this shell', 'double', 23400.0),
 
 
             # ATHAD_COND circulation-cell layout. Ported from ATHAD (its items 31-38) with
