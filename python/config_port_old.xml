@@ -1,0 +1,117 @@
+<!-- THIS FILE IS GENERATED AUTOMATICALLY BY param.py. DO NOT EDIT. --><atom>    <common>
+        <output_path>output_port_old/</output_path>  <!-- directory where model outputs should be placed(must end in /)(string) -->
+        <config_xml_path>../python</config_xml_path>  <!-- directory where the configuration files are located(string) -->
+        <verbose>false</verbose>  <!-- some description of the module(bool) -->
+        <paraview_panorama_vts_flag>false</paraview_panorama_vts_flag>  <!-- flag to control if create paraview panorama(bool) -->
+        <Coriolis>1</Coriolis>  <!-- Coriolis force(double) -->
+        <centrifugal>1</centrifugal>  <!-- centrifugal force(double) -->
+        <buoyancy>1</buoyancy>  <!-- buoyancy force(double) -->
+        <r_Earth>6370.001</r_Earth>  <!-- radius of the Earth in km(double) -->
+        <omega>0.000317</omega>  <!-- ATHAD: rotation rate in rad/s (5.5 h Hadean day)(double) -->
+        <g>9.8066</g>  <!-- gravitational acceleration of the earth in m/s²(double) -->
+        <time_start>0</time_start>  <!-- start time(int) -->
+        <time_end>0</time_end>  <!-- end time(int) -->
+        <time_step>10</time_step>  <!-- step size between timeslices(int) -->
+        <use_earthbyte_reconstruction>false</use_earthbyte_reconstruction>  <!-- control whether use earthbyte method to recontruct grids(bool) -->
+        <use_NASA_velocity>false</use_NASA_velocity>  <!-- if use NASA velocity to initialise velocity(bool) -->
+        <use_NASA_temperature>true</use_NASA_temperature>  <!-- if use NASA temperature to initialise surface temperature(bool) -->
+        <CategoryIceScheme>3</CategoryIceScheme>  <!-- number chooses Three(3)-Category Ice Scheme with rain, snow and graupel(int) -->
+        <p_0>60000.0</p_0>  <!-- pressure at sea level in hPa(double) -->
+        <t_0>273.15</t_0>  <!-- temperature in K compare to 0°C(double) -->
+        <t_surf_equator>513.15</t_surf_equator>  <!-- ATHAD_COND: prescribed sea-surface temperature at the equator in K(double) -->
+        <t_surf_pole>503.15</t_surf_pole>  <!-- ATHAD_COND: prescribed sea-surface temperature at the poles in K(double) -->
+        <cosmo_lapse_fraction>1.0</cosmo_lapse_fraction>  <!-- ATHAD: near-surface lapse rate as a fraction of the dry adiabat; 1.0 = dry adiabat(double) -->
+        <t_skin>254.0</t_skin>  <!-- ATHAD: starting radiative-equilibrium temperature of the optically thin top, in K(double) -->
+        <t_skin_relax>0.25</t_skin_relax>  <!-- ATHAD: relaxation of the t_skin fixed point per radiation call; 0 = hold t_skin fixed(double) -->
+        <r_air>39.08</r_air>  <!-- ATHAD_COND: reference density of the atmospheric mixture at the sea surface in kg/m³(double) -->
+        <r_0_water>997.0</r_0_water>  <!-- reference density of fresh water in kg/m3(double) -->
+        <t_equat_modern>15.4</t_equat_modern>  <!-- mean temperature of the modern earth in °C(double) -->
+        <rad_equator_short>298.0</rad_equator_short>  <!-- ATHAD: TOA short wave insolation at the equator in W/m2(double) -->
+        <rad_pole_short>0.0</rad_pole_short>  <!-- ATHAD: TOA short wave insolation at the poles in W/m2(double) -->
+        <sigma>5.67028e-08</sigma>  <!-- Stefan-Boltzmann constant W/(m²*K4)(double) -->
+        <kappa_H2O>0.01</kappa_H2O>  <!-- ATHAD: grey longwave mass absorption of water vapour in m2/kg(double) -->
+        <kappa_CO2>0.001</kappa_CO2>  <!-- ATHAD: grey longwave mass absorption of CO2 in m2/kg(double) -->
+        <kappa_bg>1e-06</kappa_bg>  <!-- ATHAD: grey longwave mass absorption of the background gases in m2/kg; LUMPED fallback, used only when ATM_BG_LUMPED=1(double) -->
+        <kappa_N2>1e-06</kappa_N2>  <!-- ATHAD_COND: grey longwave mass absorption of N2 in m2/kg(double) -->
+        <kappa_CH4>0.003</kappa_CH4>  <!-- ATHAD_COND: grey longwave mass absorption of CH4 in m2/kg(double) -->
+        <kappa_NH3>0.01</kappa_NH3>  <!-- ATHAD_COND: grey longwave mass absorption of NH3 in m2/kg(double) -->
+        <kappa_H2>1e-05</kappa_H2>  <!-- ATHAD_COND: grey longwave mass absorption of H2 in m2/kg(double) -->
+        <kappa_CO>0.0001</kappa_CO>  <!-- ATHAD_COND: grey longwave mass absorption of CO in m2/kg(double) -->
+        <kappa_SO2>0.002</kappa_SO2>  <!-- ATHAD_COND: grey longwave mass absorption of SO2 in m2/kg(double) -->
+        <geothermal_flux>150.0</geothermal_flux>  <!-- ATHAD: heat flux from the molten surface into the atmosphere in W/m2(double) -->
+        <rayleigh_kf>1.1574074074074073e-05</rayleigh_kf>  <!-- ATHAD_COND: near-surface Rayleigh drag rate in 1/s (was a constexpr 1/86400; ATHAD item 44)(double) -->
+        <drag_n_layers>5.0</drag_n_layers>  <!-- ATHAD_COND: boundary-layer drag depth in AIR CELLS, not metres (was a constexpr 5.0; ATHAD item 44 - 5 cells is 1786 m here against 236 m on Earth, and moves with im)(double) -->
+        <eps_residuum>0.0001</eps_residuum>  <!-- relative error, end of iterations reached, 1% error  allowed(double) -->
+        <turb_model>k_omega_SST</turb_model>  <!-- turbulence model: none, k_epsilon, k_omega, k_omega_SST(string) -->
+        <inviscid_spinup_iters>0</inviscid_spinup_iters>  <!-- cumulative iterations to run inviscid (Euler + free-slip mountains) before viscous physics activates; 0 disables(int) -->
+        <inviscid_ramp_iters>20</inviscid_ramp_iters>  <!-- iterations over which diffusion coefficient ramps from 0 to 1 after the inviscid phase(int) -->
+        <moist_phys_start_iter>0</moist_phys_start_iter>  <!-- ATHAD_COND: cumulative iterations before moist physics (SaturationAdjustment, ice scheme, MoistConvection) activates; 0 = always on, which is the ATHAD_COND default because condensation is the subject(int) -->
+        <checkpoint_save_iter>-1</checkpoint_save_iter>  <!-- dump the full 3D prognostic state to output_path/atm_restart_<iter>.bin when total_iter_count reaches this, for a fast debug restart; -1 disables(int) -->
+        <restart_from_iter>-1</restart_from_iter>  <!-- load output_path/atm_restart_<iter>.bin and resume from it, skipping the dry spin-up (debug shortcut); -1 disables(int) -->
+        <restart_stride>0</restart_stride>  <!-- ATHAD: iterations between full 3D restart dumps (.bin, ~925 MB each); 0 disables(int) -->
+        <dt_visc>4e-05</dt_visc>  <!-- non-dimensional time step used in the viscous (production) phase(double) -->
+        <dt_inviscid>8e-06</dt_inviscid>  <!-- non-dimensional time step used during the inviscid spin-up phase (smaller to absorb the missing diffusive damping)(double) -->
+    </common>
+    <atmosphere>
+        <nm>40</nm>  <!-- the maximum number of iterations(int) -->
+        <checkpoint>20</checkpoint>  <!-- control when to write output files(int) -->
+        <diagnostic_stride>0</diagnostic_stride>  <!-- ATHAD: iterations between text diagnostics; 0 = auto (10 short / 100 long)(int) -->
+        <panorama_print>100</panorama_print>  <!-- control when to write panorama files(int) -->
+        <coeff_Dalton>0.7</coeff_Dalton>  <!-- diffusion coefficient in evaporation by Dalton(double) -->
+        <convection_perturbation>1</convection_perturbation>  <!-- convective trigger perturbation: 0=fixed, 1=Bechtold (2008) surface-flux-based for shallow/fixed for deep(int) -->
+        <convection_mode>1</convection_mode>  <!-- convection type: 0=deep only (precipitating), 1=deep+shallow (non-precipitating if p_diff<p_stat_diff), 2=deep+shallow+midlevel (also non-precipitating for cloud base above p_stat_midlevel/700 hPa)(int) -->
+        <mc_M_max>100.0</mc_M_max>  <!-- ATHAD_COND: ceiling on convective mass flux |M_u|,|M_d| in kg/(m2 s)(double) -->
+        <iter_prec>3</iter_prec>  <!-- precipitation sub-iteration count: min 3 for evaporation (e_d, e_p) to act on non-zero P_conv; check convergence at 4-5(int) -->
+        <evap_model>Meyer</evap_model>  <!-- evaporation formula driving surface humidity update: Dalton, Meyer, or Rohwer(string) -->
+        <L_atm>6287.5</L_atm>  <!-- ATHAD_COND: amplitude of the radial stretch in m; shell = (exp(zeta)-1)*L_atm = 120 km(double) -->
+        <zeta>3.0</zeta>  <!-- ATHAD: radial coordinate-stretching factor (was a hard-coded 3.715)(double) -->
+        <tropopause_pole>195000.0</tropopause_pole>  <!-- ATHAD: top of the convective column at the poles in m(double) -->
+        <tropopause_equator>207000.0</tropopause_equator>  <!-- ATHAD: top of the convective column at the equator in m(double) -->
+        <cell_lat_scale>0.11</cell_lat_scale>  <!-- ATHAD_COND: Hadley-edge latitude as a fraction of Earth's; 0.11 = Held-Hou edge for this rotation rate and contrast, 1.0 = Earth(double) -->
+        <cell_amp_mode>0</cell_amp_mode>  <!-- ATHAD_COND: scale the prescribed velocity amplitudes with cell_lat_scale; 0 = off, 1 = v,w by s (continuity), 2 = v by s and w by s^2 (angular momentum)(int) -->
+        <n_cells_hemisphere>5</n_cells_hemisphere>  <!-- ATHAD_COND: prescribed circulation cells per hemisphere; 5 = this regime (Rhines ~21 deg bands), 3 = Earth(int) -->
+        <albedo_surface>0.06</albedo_surface>  <!-- ATHAD_COND: clear-sky albedo of the liquid water sea surface(double) -->
+        <albedo_cloud>0.5</albedo_cloud>  <!-- ATHAD: shortwave albedo of an optically thick cloud top(double) -->
+        <epsilon_equator>0.48</epsilon_equator>  <!-- emissivity and absorptivity caused by other gases than water vapour/(by Häckel)(double) -->
+        <epsilon_pole>0.45</epsilon_pole>  <!-- emissivity and absorptivity caused by other gases than water vapour at the poles(double) -->
+        <epsilon_tropopause>0.001</epsilon_tropopause>  <!-- emissivity and absorptivity caused by other gases than water vapour in the tropopause(double) -->
+        <re>1000.0</re>  <!-- Reynolds number for laminar flows: ratio viscous to inertia forces, Re = u * L/nue(double) -->
+        <sc_WaterVapour>0.61</sc_WaterVapour>  <!-- Schmidt number of water vapour, Sc = nue/D(double) -->
+        <sc_CO2>0.96</sc_CO2>  <!-- Schmidt number of CO2(double) -->
+        <pr>0.7179</pr>  <!-- Prandtl number of air for laminar flows(double) -->
+        <pr_turb>0.9</pr_turb>  <!-- turbulent Prandtl number for temperature transport in turbulent flows(double) -->
+        <abl_height>10000.0</abl_height>  <!-- ATHAD: physical depth of the atmospheric boundary layer in m(double) -->
+        <x_H2O>0.5578</x_H2O>  <!-- ATHAD_COND: mole fraction of H2O at the sea surface (saturated: p_sat(T_surf)/p_0)(double) -->
+        <x_CO2>0.3459</x_CO2>  <!-- ATHAD_COND: mole fraction of CO2 at the sea surface (dry ratio, after the traces take 7 %)(double) -->
+        <x_N2>0.0263</x_N2>  <!-- ATHAD_COND: mole fraction of N2 at the sea surface (dry ratio, after the traces take 7 %)(double) -->
+        <x_CH4>0.014</x_CH4>  <!-- ATHAD_COND: mole fraction of CH4(double) -->
+        <x_NH3>0.014</x_NH3>  <!-- ATHAD_COND: mole fraction of NH3(double) -->
+        <x_H2>0.014</x_H2>  <!-- ATHAD_COND: mole fraction of H2(double) -->
+        <x_CO>0.014</x_CO>  <!-- ATHAD_COND: mole fraction of CO(double) -->
+        <x_SO2>0.014</x_SO2>  <!-- ATHAD_COND: mole fraction of SO2(double) -->
+        <ep>0.6893</ep>  <!-- ATHAD_COND: ratio of the background-mixture to water-vapour gas constants(double) -->
+        <hp>6.1078</hp>  <!-- water vapour pressure at T = 0°C: E = 6.1 hPa(double) -->
+        <R_Air>318.1</R_Air>  <!-- ATHAD_COND: specific gas constant of the non-condensable background in J/(kg*K)(double) -->
+        <R_WaterVapour>461.5</R_WaterVapour>  <!-- specific gas constant of water vapour in J/(kg*K)(double) -->
+        <r_water_vapour>0.0094</r_water_vapour>  <!-- density of saturated water vapour in kg/m³ at 10°C(double) -->
+        <R_co2>188.9</R_co2>  <!-- specific gas constant of CO2 in J/(kg*K)(double) -->
+        <lv>2520000.0</lv>  <!-- specific latent evaporation heat(condensation heat) in J/kg(double) -->
+        <ls>2830000.0</ls>  <!-- specific latent vaporisation heat(sublimation heat) in J/kg(double) -->
+        <cp_l>1372.6</cp_l>  <!-- ATHAD_COND: specific heat capacity of the mixture at constant pressure in J/(kg K)(double) -->
+        <cv_l>1073.4</cv_l>  <!-- ATHAD_COND: specific heat capacity of the mixture at constant volume in J/(kg K)(double) -->
+        <lamda>0.0262</lamda>  <!-- heat transfer coefficient of air in W/(m K)(double) -->
+        <r_co2>0.0019767</r_co2>  <!-- density of CO2 in kg/m³ at 25°C(double) -->
+        <gam>0.0065</gam>  <!-- constant slope of temperature    gam = 6.5 K/1000 m(double) -->
+        <u_0>8.0</u_0>  <!-- annual mean of surface wind velocity in m/s, 8 m/s compare to 28.8 km/h(double) -->
+        <cloud_cap>0.05</cloud_cap>  <!-- ATHAD: ceiling on the condensate mass fraction (cloud, ice, and their sum) in kg/kg(double) -->
+        <t_max_phys>2000.0</t_max_phys>  <!-- ATHAD: upper physical bound on the prognostic temperature in K(double) -->
+        <t_00>236.15</t_00>  <!-- temperature in K compare to -37°C(double) -->
+        <t_000>253.15</t_000>  <!-- temperature in K compare to -20°C(double) -->
+        <s_0>274515.75</s_0>  <!-- entropy at 0°C, cp_l * t_0 in J/kg(double) -->
+        <c_0>0.3616</c_0>  <!-- ATHAD_COND: reference water vapour mass fraction at the sea surface in kg/kg(double) -->
+        <c_h2o_dry_top>0.00452</c_h2o_dry_top>  <!-- ATHAD_COND: water vapour mass fraction above the cold trap in kg/kg(double) -->
+        <co2_0>0.5478</co2_0>  <!-- ATHAD_COND: reference CO2 mass fraction at the sea surface in kg/kg(double) -->
+        <co2_scale>1.0</co2_scale>  <!-- multiplier applied to the whole CO2 field for sensitivity experiments (1.0 = field as built; 2.0 = doubled CO2)(double) -->
+        <c_ocean>70</c_ocean>  <!-- ATHAD: surface water vapour as a fraction of the saturation value, in %(double) -->
+    </atmosphere>
+</atom>
