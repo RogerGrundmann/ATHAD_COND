@@ -89,6 +89,18 @@ tinyxml2/%.o: tinyxml2/%.cpp
 DEPS = $(LIB_OBJ:.o=.d) $(ATM_OBJ:.o=.d) $(XML_OBJ:.o=.d) $(ATM_CLI_OBJ:.o=.d)
 -include $(DEPS)
 
+# EVERY OBJECT DEPENDS ON THIS MAKEFILE, and the reason is a bug that got past the -MMD
+# repair above -- found in ATOM_Precipitation on 2026-08-26 and ported here before it could
+# happen. Header tracking only covers objects ALREADY compiled with -MMD; an object built
+# before the flag has no .d, so make sees only its .cpp and never rebuilds it. Upstream's
+# cli/atm.o was in exactly that state, and because it holds the model as a STACK LOCAL, main
+# reserved the OLD sizeof while the library constructed the NEW one -- the constructor ran off
+# the end of main's frame and tripped the stack canary at exit (*** stack smashing detected
+# ***), after a complete and apparently successful run, with no compiler warning and nothing
+# for AddressSanitizer to see. A Makefile change is exactly the moment that hazard exists, so
+# tie every object to it.
+$(LIB_OBJ) $(ATM_OBJ) $(XML_OBJ) $(ATM_CLI_OBJ): Makefile
+
 .PHONY: clean
 clean:
 	\rm -vf $(LIB_OBJ) $(ATM_OBJ) $(XML_OBJ) $(ATM_CLI_OBJ) $(DEPS) $(PARAM_OUTPUTS) cli/cond libcond.a
