@@ -1009,8 +1009,19 @@ void cAtmosphereModel::paraview_vtk_longal(string &Name_Bathymetry_File,
     double dx = 0.1;
     double dz = 0.025;
 
+    // THE VERTICAL AXIS IS TRUE HEIGHT, NOT LEVEL INDEX -- the same repair the zonal writer
+    // got in item 70, which fixed that writer only and left this one on index space. On an
+    // exponentially stretched grid, x = i*dx stretches the bottom of the atmosphere and
+    // squashes the top by the ratio of the thickest layer to the thinnest, and the
+    // distortion VARIES with height, so no ParaView aspect setting can undo it. Mapping the
+    // true height onto the same 0..(im-1)*dx span keeps the figure the size it always was
+    // while making the axis linear in metres.
+    const double h_top  = get_layer_height(im - 1);
+    const double x_span = (im - 1) * dx;
+    const double x_of_h = (h_top > 0.0) ? x_span / h_top : 0.0;   // plot units per metre
+
     for(int i = 0; i < im; i++){
-        double x = i * dx;
+        double x = get_layer_height(i) * x_of_h;
         for(int k = 0; k < km; k++){
             buf << x << " " << 0.0 << " " << k * dz << '\n';
         }
@@ -1139,8 +1150,11 @@ void cAtmosphereModel::paraview_vtk_longal(string &Name_Bathymetry_File,
     buf << "VECTORS u-w-Cell float\n";
     for(int i = 0; i < im; i++){
         for(int k = 0; k < km; k++){
-            buf << safe_val(u.x[i][j_longal][k])
-                << " " << 0.0 << " " << safe_val(w.x[i][j_longal][k]) << '\n';
+            // * u_0: the scalars written beside this vector by dump_longal are
+            // dimensional, and this vector was not -- the same component/vector unit
+            // mismatch item 70 found in the zonal writer, in the other direction.
+            buf << safe_val(u.x[i][j_longal][k] * u_0)
+                << " " << 0.0 << " " << safe_val(w.x[i][j_longal][k] * u_0) << '\n';
         }
     }
     Atmosphere_vtk_longal_File << buf.str();
