@@ -318,6 +318,29 @@ mass- not mole-weighted mixture properties (ATNEPT `c116d71`); in-place Gauss–
 threading defect (ATURAN `ffd0e0e`); report failures and limits in the README (ATURAN
 `74b4ded`, ATNEPT `34286b8`).
 
+**THE BUILD CAN SHIP A STALE OBJECT, AND THE `-MMD` REPAIR DOES NOT COVER IT** (ported
+2026-08-26 from ATOM_Precipitation, where it actually bit). `-MMD` tracks headers only for
+objects ALREADY compiled with it; one built before the flag has no `.d`, so make sees only its
+`.cpp` and never rebuilds it. Upstream's `cli/atm.o` sat four weeks stale through a large port,
+and because it holds the model as a **stack local**, adding members to the class made `main`
+reserve the OLD `sizeof` while the library constructed the NEW one -- the constructor ran off
+the end of main's frame onto the stack canary. Every run aborted with
+`*** stack smashing detected ***` AFTER completing successfully, with no compiler warning, and
+**AddressSanitizer saw nothing** (an ODR size mismatch is not an out-of-bounds access to
+anything it tracks). Found by disassembling `main`. The cure is one line -- **every object
+depends on the Makefile itself** -- and it is PROPHYLACTIC here: every C++ object in this tree
+already had its `.d`, checked before applying.
+
+**The constant-density streamfunction claim in ATHAD's CLAUDE.md was already out of date about
+this tree** -- the density-weighted version is present here, and ATOM_Precipitation got it on
+2026-08-26 (2.28x overweight at its cell core, `Psi_max` 851.68 -> 373.84 (1e9 kg/s), location
+unmoved). Nothing to do here; recorded so it is not re-derived.
+
+**The longitudinal ParaView slice was on level index here too**, fixed the same day: item 70
+put the ZONAL writer on true height and fixed only that one, so every longitude-height figure
+kept the distortion. Plot-only; any conclusion drawn by eye from an older longitudinal plot
+should be re-examined.
+
 ## Open risks
 
 - **Field names changed 2026-08-20** (ported from ATHAD README item 61). The Brunt-Vaisala
