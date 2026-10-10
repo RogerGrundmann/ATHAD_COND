@@ -353,8 +353,11 @@ should be re-examined.
   downdraft fields (`convectionStep()` in `cAtmosphereModel.cpp`). Measured, 20 iterations,
   8 threads: 120 of 180 printed extrema identical, the scheme's own fields go to zero, **everything
   else moves in the 6th-8th digit** (max T 238.881236 -> 238.881216 C, precipitation average
-  199 163.86 -> 199 163.62 mm/a). **20 iterations only** — whether the lost convective transport
-  of moisture and momentum matters needs a long run, not made. ATHAD and ATHAD_PERID still call
+  199 163.86 -> 199 163.62 mm/a). **The long run, 400 iterations, three arms
+  (`run_long.sh`; two Tiedtke runs byte-identical, so the noise floor is zero)**: 104 of 180
+  extrema identical, the rest below 0.03 %; fields differ by at most 0.0023 K and 0.32 g/kg of
+  vapour (1e-3 of its range) — **but that difference grows linearly, 0.08 g/kg per 100
+  iterations, and has not levelled off**, so this says nothing about a spun-up state. ATHAD and ATHAD_PERID still call
   Tiedtke.
 - **THREE PRINT-ONLY INSTRUMENTS FROM UPSTREAM, 2026-10-10: `ATM_SATADJ_DIAG`, `ATM_MC_DIAG`,
   `ATM_MC_CAP_DIAG`** (README, first section). Default off; byte-identical off and on (20/20

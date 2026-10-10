@@ -68,7 +68,35 @@ that repaired its sub-iteration cycles with period 2 and the answer depends on t
 **So at 20 iterations the mass-flux scheme was contributing nothing the large-scale state could
 see**, and the replacement is safe at that length. **That is all this measurement says.** 20
 iterations are minutes of model time; the run that would show whether the missing convective
-transport matters is a long one, and it has not been made.
+transport matters is a long one; it follows.
+
+**The long run, 400 iterations (2026-10-10)** — from scratch, 8 threads, three arms side by
+side: `adjust`, `tiedtke`, and `tiedtke` a second time as the noise floor (`python/run_long.sh`,
+`run_long_adj`, `run_long_tied`, `run_long_tied2`; 2 h 32 min wall for the three). `cmp_extrema.py` reads the last printed extrema, `cmp_fields.py` the section VTKs of every
+checkpoint; the largest difference is taken over the three sections and given as a fraction of
+the field's range.
+
+- **The noise floor is zero**: the two Tiedtke runs agree in 180 of 180 extrema and their VTKs
+  are byte-identical. Every difference below is the scheme's.
+- **104 of 180 extrema identical** between `tiedtke` and `adjust`; of the 76 that differ, 39 are
+  the scheme's own fields. The rest stay below 0.03 %: max temperature 238.788879 → 238.788659 °C,
+  max water vapour 351.871236 → 351.869503 g/kg, max cloud ice −0.004 %, evaporation maxima
+  +0.023 %. (`max presgrad force` −6e-6 → −3.8e-5 is the last digit of its format again.)
+- **Fields, at iteration 400**: temperature differs by at most 0.0023 K (rms 0.0007 K), water
+  vapour by 0.32 g/kg at 6.7 bar (rms 0.029; 1e-3 of the range), cloud water by 0.037 g/kg,
+  `v` by 1.7e-4 and `w` by 1.1e-3 m/s, the dynamic pressure by 3e-4 of its range.
+- **The differences GROW LINEARLY and have not levelled off**: water vapour 1.2e-4 of its range
+  at iteration 50, 4.8e-4 at 200, 9.6e-4 at 400; cloud water, temperature, `u` and `w` likewise.
+  Only `v` and the dynamic pressure flatten.
+- The mass-weighted mean water drifts +0.6443 % with `tiedtke` and +0.6480 % with `adjust`.
+- One transient: at iteration 350, four cells of the zonal section at 0.015 bar differ by 33 K
+  (−52.1 against −18.6 °C); at 400 they agree again to 0.002 K. Not explained.
+- All arms exit 0, no NaN.
+
+**So over 400 iterations the convective transport does not matter here** — three to five digits
+below the fields themselves. **It is not a statement about a spun-up state**: the difference in
+water vapour grows by about 0.08 g/kg per 100 iterations without slowing, so a run a hundred
+times longer could reach tens of g/kg if nothing bounds it. That run has not been made.
 
 **What is lost, knowingly:** convective transport of moisture (`MC_q`, which sat on its cap in
 1.1 % of cells) and of momentum (`MC_v`, `MC_w`); and `MC_t`, which `densities()` discarded in
