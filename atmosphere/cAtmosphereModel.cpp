@@ -108,6 +108,70 @@ cAtmosphereModel::~cAtmosphereModel(){
 // moist sequence, because where it is sampled decides what it means: the ice scheme
 // reads c and q_Ice immediately after SaturationAdjustment, so a census taken after
 // the ice scheme AND MoistConvection measures a different state than the gates saw.
+// ==================== WHICH CONVECTION SCHEME RUNS (2026-10-10) ====================
+// ATM_CONV_SCHEME=<adjust|tiedtke>. DEFAULT `adjust` SINCE 2026-10-10, AT THE USER'S INSTRUCTION
+// ("replace the Tiedtke scheme with a simple moist convective adjustment"); `tiedtke` restores
+// the mass-flux scheme (MoistConvection.h) and with it every number recorded before that date.
+//
+// WHAT `adjust` IS IN THIS TREE. A moist convective adjustment holds a column on the moist
+// adiabat where it is saturated and on the dry one where it is not, and lets the condensate
+// that results rain out. Both halves already run here every moist step, unconditionally:
+//   - ThermoAtm::densities() rebuilds t from the surface up with SaturationH2O::moistLapse
+//     (invariant 4): the lapse rate is the saturated adiabat wherever condensation is possible
+//     and g/cp elsewhere. That is the HARD limit of an adjustment -- there is no superadiabatic
+//     layer left for a separate routine to find, and one called before densities() would be
+//     overwritten by it.
+//   - SaturationAdjustment condenses what exceeds saturation, with its latent heat, and the
+//     ice scheme turns the condensate into precipitation.
+// So `adjust` adds no routine: it stops calling the mass-flux scheme, and zeroes the four
+// tendencies that scheme feeds the right-hand sides (MC_t, MC_q, MC_v, MC_w), its precipitation
+// P_conv, and its updraft / downdraft fields, so that nothing stale is read or written out.
+//
+// WHY THE MASS-FLUX SCHEME GOES (README, 2026-10-10): it is ATOM_Precipitation's Tiedtke scheme
+// with Earth constants on a 60 bar column. Measured here: its updraft condensate is annihilated
+// by detraining the environment's cloud, so it forms no rain; with that repaired its
+// sub-iteration cycles with period 2; made consistent it forms 2.3e7 mm/a of rain and
+// re-evaporates all of it; and through all of that the large-scale state moves in the 7th digit.
+//
+// WHAT IS LOST WITH IT, knowingly: convective transport of moisture (MC_q) and of momentum
+// (MC_v, MC_w), and MC_t -- which densities() discarded anyway. A convective adjustment that
+// also MIXES moisture and momentum over the adjusted depth is the natural next step if the
+// measurements ask for it; it is not written.
+static bool convTiedtke(){
+    static const bool v = [](){
+        const char* e = getenv("ATM_CONV_SCHEME");
+        return e && std::string(e) == "tiedtke"; }();
+    return v;
+}
+
+static void convectionStep(cAtmosphereModel& m, int iter_n)
+{
+    if(convTiedtke()){
+        MoistConvection(m).run(iter_n);                                // rainfall from convecting clouds
+        return;
+    }
+    static bool announced = false;
+    if(!announced){
+        announced = true;
+        std::cout << std::endl
+                  << "      AGCM: convection scheme = moist convective adjustment: the moist adiabat of"
+                     " densities() + SaturationAdjustment; the Tiedtke mass-flux scheme is not called"
+                     " (ATM_CONV_SCHEME=tiedtke restores it)" << std::endl;
+    }
+    Array* const fields[] = { &m.MC_t, &m.MC_q, &m.MC_v, &m.MC_w, &m.P_conv,
+                              &m.M_u, &m.M_d, &m.E_u, &m.D_u, &m.E_d, &m.D_d,
+                              &m.q_v_u, &m.q_c_u, &m.q_v_d,
+                              &m.c_u, &m.g_p, &m.e_d, &m.e_l, &m.e_p,
+                              &m.u_u, &m.u_d, &m.v_u, &m.v_d, &m.w_u, &m.w_d };
+    for(Array* f : fields){
+        #pragma omp parallel for collapse(2) schedule(static)
+        for(int i = 0; i < m.im; i++)
+            for(int j = 0; j < m.jm; j++)
+                for(int k = 0; k < m.km; k++)
+                    f->x[i][j][k] = 0.0;
+    }
+}
+
 static void iceCensusFn(cAtmosphereModel& m, const char* where)
 {
 // ATM_ICE_CENSUS=1 — IS THE ICE BRANCH DEAD, AND IF SO WHY?
@@ -1040,7 +1104,7 @@ void cAtmosphereModel::RunTimeSlice(int Ma){
 
 //    goto Printout;
 
-    MoistConvection(*this).run(iter_n);                                 // rainfall from convecting clouds
+    convectionStep(*this, iter_n);                                      // ATM_CONV_SCHEME: moist adjustment (default) or Tiedtke
 
     AtomUtils::damp_wiggles(P_conv, &i_topography, true, true, true);
     AtomUtils::damp_wiggles(E_u,    &i_topography, true, true, true);
@@ -1697,7 +1761,7 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                 AtomUtils::damp_wiggles(P_rain, &i_topography, true, true, true);
                 AtomUtils::damp_wiggles(P_snow, &i_topography, true, true, true);
 
-                MoistConvection(*this).run(iter_n);                     // rainfall from convecting clouds
+                convectionStep(*this, iter_n);                          // ATM_CONV_SCHEME: moist adjustment (default) or Tiedtke
 
                 AtomUtils::damp_wiggles(P_conv, &i_topography, true, true, true);
                 AtomUtils::damp_wiggles(E_u,    &i_topography, true, true, true);

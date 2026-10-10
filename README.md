@@ -19,6 +19,72 @@ ground to ~177 km and *nothing condenses*; here water is subcritical everywhere 
 condensation is live from the sea surface up, so the code paths ATHAD spent seventeen
 defect-fixes making inert are the ones this model depends on.
 
+## The convection scheme is a moist convective adjustment since 2026-10-10 — the Tiedtke scheme is no longer called
+
+**`ATM_CONV_SCHEME=<adjust|tiedtke>`, default `adjust`, at the user's instruction** ("replace
+the Tiedtke scheme with a simple moist convective adjustment"). `ATM_CONV_SCHEME=tiedtke`
+restores the mass-flux scheme. **Every number in this file recorded before this section was made
+with Tiedtke running**; the sections below it, written the same day, are the measurements that
+led here and all of them need `ATM_CONV_SCHEME=tiedtke` to be reproduced.
+
+**What `adjust` is in this tree — and it is less than the name suggests.** A moist convective
+adjustment holds a column on the moist adiabat where it is saturated and on the dry one where it
+is not, and lets the resulting condensate rain out. Both halves already run here on every moist
+step, unconditionally:
+
+- `ThermoAtm::densities()` rebuilds `t` from the surface up with `SaturationH2O::moistLapse`
+  (invariant 4) — the saturated adiabat wherever condensation is possible, `g/cp` elsewhere.
+  That is the HARD limit of an adjustment: no superadiabatic layer is left for a separate
+  routine to find, and one called before `densities()` would be overwritten by it.
+- `SaturationAdjustment` condenses what exceeds saturation, with its latent heat, and the ice
+  scheme turns the condensate into precipitation.
+
+So **`adjust` adds no routine**. It stops calling `MoistConvection`, and zeroes the four
+tendencies that scheme feeds the right-hand sides (`MC_t`, `MC_q`, `MC_v`, `MC_w`), its
+precipitation `P_conv` and its updraft / downdraft fields, so that nothing stale is read or
+written out. `convectionStep()` in `cAtmosphereModel.cpp` is the one place.
+
+**Why the mass-flux scheme goes.** It is `ATOM_Precipitation`'s Tiedtke scheme with Earth
+constants on a 60 bar column, and the sections below measured it the same day: its updraft
+condensate is annihilated by detraining the environment's cloud, so it forms no rain; with
+that repaired its sub-iteration cycles with period 2 and the answer depends on the parity of
+`iter_prec`; made consistent it forms 2.3e7 mm/a of rain and re-evaporates all of it.
+
+**What the replacement changes, measured** — 20 iterations from scratch, 8 threads
+(`python/run_ca_tied`, `run_ca_adj`, `run_conv.sh`), last print:
+
+- **120 of 180 printed extrema are identical.** Of the 60 that differ, 37 are the scheme's own
+  fields going to zero (`M_u` max 13 210, `MC_q` max 0.02 g/kg/s — its cap —, `MC_t`
+  +0.0052 / −0.0044 K/s, `MC_v` ±3.9e-5, `MC_w` −2.5e-4 m/s2, and so on).
+- **The other 23 move in the 6th to 8th digit**: max temperature 238.881236 → 238.881216 °C,
+  max water vapour 352.600544 → 352.600387 g/kg, `Psi` 2.90858128e13 → 2.90857955e13, max
+  radiation 4028.3136 → 4028.3130, precipitation average 199 163.86 → 199 163.62 mm/a; the
+  largest relative changes are the evaporation maxima, +0.004 %. (`max presgrad force` reads
+  −1e-6 → −8e-6, a field whose printed maximum is at the last digit of the format.)
+- `cloud_cap`'s deletion in the last call is −19.156 → −19.169 mm; the saturation budget closes
+  in both.
+- No NaN, both exit 0; 7 min 21 s against 7 min 42 s wall.
+
+**So at 20 iterations the mass-flux scheme was contributing nothing the large-scale state could
+see**, and the replacement is safe at that length. **That is all this measurement says.** 20
+iterations are minutes of model time; the run that would show whether the missing convective
+transport matters is a long one, and it has not been made.
+
+**What is lost, knowingly:** convective transport of moisture (`MC_q`, which sat on its cap in
+1.1 % of cells) and of momentum (`MC_v`, `MC_w`); and `MC_t`, which `densities()` discarded in
+any case. A convective adjustment that also MIXES moisture and momentum over the adjusted depth
+is the natural next step if a long run asks for it. It is not written.
+
+**Checks.** `ATM_CONV_SCHEME=tiedtke` against the binary from before all of 2026-10-10's changes:
+20 of 20 output files byte-identical (2 iterations, 1 thread), and 20 of 20 against the first
+run of the day at 20 iterations and 8 threads (`run_dg_20`). Control: `adjust` against
+`tiedtke`, 2 of 20.
+
+**Not touched:** ATHAD and ATHAD_PERID still call Tiedtke. ATHAD has a prognostic-temperature
+branch (`ATM_PROGNOSTIC_T`) with a DRY Manabe-Strickler `ConvectiveAdjustment.h`; there a moist
+adjustment would be a real routine (the same sweep with `moistLapse` where the air is
+saturated). This tree has no such branch.
+
 ## Three instruments from upstream, and what they read on their first call (2026-10-10)
 
 `ATM_SATADJ_DIAG`, `ATM_MC_DIAG` and `ATM_MC_CAP_DIAG`, all **print-only and default off**, ported

@@ -343,6 +343,19 @@ should be re-examined.
 
 ## Open risks
 
+- **THE CONVECTION SCHEME IS A MOIST CONVECTIVE ADJUSTMENT SINCE 2026-10-10; TIEDTKE IS NOT CALLED**
+  (README, first section; the user's instruction). `ATM_CONV_SCHEME=tiedtke` restores it, and
+  **every number recorded before that date, and every `ATM_MC_*` knob and instrument below, needs
+  it** — with the default they act on a routine that does not run. **In this tree `adjust` adds
+  no routine**: `densities()` already rebuilds `t` on the moist adiabat every moist step
+  (invariant 4) and `SaturationAdjustment` + the ice scheme condense and rain; `adjust` stops
+  calling `MoistConvection` and zeroes `MC_t`, `MC_q`, `MC_v`, `MC_w`, `P_conv` and the updraft /
+  downdraft fields (`convectionStep()` in `cAtmosphereModel.cpp`). Measured, 20 iterations,
+  8 threads: 120 of 180 printed extrema identical, the scheme's own fields go to zero, **everything
+  else moves in the 6th-8th digit** (max T 238.881236 -> 238.881216 C, precipitation average
+  199 163.86 -> 199 163.62 mm/a). **20 iterations only** — whether the lost convective transport
+  of moisture and momentum matters needs a long run, not made. ATHAD and ATHAD_PERID still call
+  Tiedtke.
 - **THREE PRINT-ONLY INSTRUMENTS FROM UPSTREAM, 2026-10-10: `ATM_SATADJ_DIAG`, `ATM_MC_DIAG`,
   `ATM_MC_CAP_DIAG`** (README, first section). Default off; byte-identical off and on (20/20
   files, 4 iterations, 1 thread). **Use them before and after any moist-physics change here.**
