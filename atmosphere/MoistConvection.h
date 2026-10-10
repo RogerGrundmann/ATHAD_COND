@@ -53,6 +53,25 @@ namespace AtomMoistConvection {
     // step*D can exceed M(i-1) on the deep layers. Form the two weights, floor both at zero,
     // divide by their sum. Bounded by construction, identical to the old expression whenever
     // nothing was clamped, and it needs no ceiling constant.
+    // ATM_MC_INLINE=<0|1|2>, default 0 = unchanged (2026-10-10; NOT an upstream knob).
+    //
+    // The iter_prec sub-iteration is a LAGGED fixed-point iteration and it does not converge:
+    // it cycles with period 2 (README, 2026-10-10). Two quantities are formed from what the
+    // PREVIOUS pass left behind:
+    //   e_d, e_p   in downdraftEntrainment, from P_conv of the previous pass -- so a pass
+    //              that sees un-evaporated rain evaporates all of it, and the next sees none;
+    //   g_p        in updraftEntrainment, from q_c_u of the previous pass, while q_c_u is
+    //              debited by g_p -- so much condensate makes much rain makes little condensate.
+    // Measured: convective rain at the ground 0 for iter_prec 3 and 5, ~3e7 mm/a for 4 and 6.
+    //
+    // =1  e_d and e_p are evaluated in downdraftRecurrence's own downward walk, at the flux
+    //     ARRIVING at the level plus the rain made there -- the same supply ATM_MC_EVAP_LIMIT
+    //     charges them against -- with the law, the deficit (qvDown) and the area weighting
+    //     (ATM_MC_ED_AREA) exactly as downdraftEntrainment writes them.
+    // =2  also g_p: in updraftRecurrence's upward walk, g_p of the level below is K_p times the
+    //     q_c_u this pass has just computed there, before it is debited from the level above.
+    static const int mc_inline = [](){
+        const char* e = getenv("ATM_MC_INLINE"); return e ? atoi(e) : 0; }();
     static const bool mc_ed_area = [](){
         const char* e = getenv("ATM_MC_ED_AREA"); return (e && atoi(e) != 0); }();
     static const bool mc_evap_limit = [](){
@@ -196,6 +215,7 @@ public:
 
 
         for(int iter_prec = 1; iter_prec <= m.iter_prec; iter_prec++){
+            pass_now = iter_prec;             // read by ATM_MC_INLINE only
             updraftEntrainment(iter_prec);
             CloudBaseUpdate();
             updraftRecurrence();
@@ -225,6 +245,7 @@ private:
 
 
     // Precomputed data
+    int pass_now = 0;                         // the iter_prec pass in progress (ATM_MC_INLINE)
     std::vector<double> height_table;
     std::vector<double> step;
     std::vector<int8_t> land_surf;
@@ -1202,12 +1223,35 @@ void findCloudBaseLFS() {
                 int i_LFS  = i_LFS_local[j][k];
                 if(i_base < 0 || i_LFS <= i_base) continue;
 
+                // ATM_MC_INLINE=2: K_p's level test, as updraftEntrainment forms it.
+                double kp_height = 0.0;
+                if(mc_inline >= 2){
+                    const bool is_shallow  = m.convection_mode >= 1
+                                             && (m.p_stat.x[i_base][j][k] - m.p_stat.x[i_LFS][j][k])
+                                                < f_stat_diff * m.p_stat.x[0][j][k];
+                    const bool is_midlevel = m.convection_mode >= 2
+                                             && m.p_stat.x[i_base][j][k]
+                                                < f_stat_midlevel * m.p_stat.x[0][j][k];
+                    const double delta_i_c = (is_shallow || is_midlevel) ? 1.0e9
+                                           : (land_surf[j * m.km + k] ? 1000.0 : 500.0);
+                    kp_height = height_table[i_base] + delta_i_c;
+                }
+                auto g_p_inline = [&](int ii){
+                    const double K_p = (height_table[ii] > kp_height) ? bet_p : 0.0;
+                    return (pass_now > 1 && m.t.x[ii][j][k] * m.t_0 >= m.t_0)
+                           ? K_p * m.q_c_u.x[ii][j][k] : 0.0;
+                };
+
                 for(int i = i_base+1; i <= i_LFS-1; i++){
 
                     double t_u       = m.t.x[i-1][j][k] * m.t_0;
                     double r_h_prev  = m.r_humid.x[i-1][j][k];
                     double step_prev = step[i-1];
                     double r_h_i     = m.r_humid.x[i][j][k];
+
+                    // ATM_MC_INLINE=2: the level below has its q_c_u of THIS pass; form its rain
+                    // generation from that before the line below debits it from this level.
+                    if(mc_inline >= 2 && i-1 > i_base) m.g_p.x[i-1][j][k] = g_p_inline(i-1);
 
                     double d_Mu = m.E_u.x[i-1][j][k] - m.D_u.x[i-1][j][k];
 
@@ -1373,6 +1417,13 @@ void findCloudBaseLFS() {
                         m.g_p.x[i][j][k]   = 0.0; m.c_u.x[i][j][k] = 0.0; m.e_l.x[i][j][k] = 0.0;
                     }
                 } // end i
+
+                // ATM_MC_INLINE=2: the top level the walk computed has no level above to do it.
+                if(mc_inline >= 2 && i_LFS-1 > i_base){
+                    const int it = i_LFS-1;
+                    const double t_b = m.t.x[it-1][j][k] * m.t_0;       // the walk's own reset test
+                    m.g_p.x[it][j][k] = (is_land(m.h, it, j, k) || t_b <= t_00) ? 0.0 : g_p_inline(it);
+                }
             }
         }
     }
@@ -1388,6 +1439,17 @@ void findCloudBaseLFS() {
             for(int k = 0; k < m.km; k++){
 
                 int i_lfs_loc = i_LFS_local[j][k];
+
+                // ATM_MC_INLINE>=1: the precipitating area fraction, as downdraftEntrainment forms it.
+                const int i_base_loc = i_Base_local[j][k];
+                double sigma_p = 0.0;
+                if(mc_inline >= 1 && i_base_loc >= 0 && i_lfs_loc > i_base_loc){
+                    const double w_u_cb = fabs(m.w_u.x[i_base_loc][j][k]) * m.u_0;
+                    if(w_u_cb > 0.0)
+                        sigma_p = fabs(m.M_u.x[i_base_loc][j][k])
+                                  / (safe_r_humid(m.r_humid.x[i_base_loc][j][k]) * w_u_cb);
+                    sigma_p = std::min(sigma_p, 1.0);
+                }
 
                 for(int i = i_lfs_loc-1; i >= 0; i--){
 
@@ -1464,6 +1526,35 @@ void findCloudBaseLFS() {
                         m.q_v_d.x[i][j][k] = 0.0;
                         m.u_d.x[i][j][k]   = 0.0; m.v_d.x[i][j][k] = 0.0; m.w_d.x[i][j][k] = 0.0;
                         m.s_d.x[i][j][k]   = 1.0; m.e_d.x[i][j][k] = 0.0; m.e_p.x[i][j][k] = 0.0;
+                    }
+
+                    // ATM_MC_INLINE>=1: e_d and e_p from the flux arriving here plus the rain
+                    // made here, replacing what downdraftEntrainment formed from the previous
+                    // pass's P_conv. Same law, same deficit, same area weighting, same gates.
+                    if(mc_inline >= 1 && i > 0 && i_base_loc >= 0 && i_lfs_loc > i_base_loc
+                       && pass_now > 1 && !(is_land(m.h, i, j, k) || t_u <= t_00)){
+                        const double q_sat  = safe_q_sat(SaturationH2O::saturationPressureAuto(t_u),
+                                                         m.p_stat.x[i][j][k], m.c.x[i][j][k]);
+                        const double def    = q_sat - qvDown(i, j, k, q_sat);
+                        const double P_here = std::max(0.0, m.P_conv.x[i+1][j][k]
+                                                  + step[i] * m.r_humid.x[i][j][k] * m.g_p.x[i][j][k]);
+                        double ed = 0.0, ep = 0.0;
+                        if(P_here > 0.0){
+                            if(mc_ed_area){
+                                if(sigma_p > 0.0){
+                                    const double P_s = P_here / sigma_p;
+                                    ed = sigma_p * a_ev * (1.0 + b_ev * pow(P_s, 1.0/6.0))
+                                         * def * pow(P_s, 4.0/9.0);
+                                }
+                            }else{
+                                ed = a_ev * (1.0 + b_ev * pow(P_here, 1.0/6.0))
+                                     * def * pow(P_here, 4.0/9.0);
+                            }
+                            if(i <= i_base_loc && sigma_p > 0.0)
+                                ep = sigma_p * alf_1 * def * sqrt(1e1 / alf_2 * P_here / sigma_p);
+                        }
+                        m.e_d.x[i][j][k] = std::max(0.0, ed);
+                        m.e_p.x[i][j][k] = std::max(0.0, ep);
                     }
 
                     // ATM_MC_EVAP_LIMIT=<0|1>, default 0 = unchanged. Ported 2026-10-10 from
@@ -2073,8 +2164,8 @@ void findCloudBaseLFS() {
         if(n2 > 0)
             printf("      AGCM: [MC-GP] step base+1 -> base+2 in %ld columns: detrained ENVIRONMENT cloud >= the condensate the"
                    " updraft carries in %ld;  mean step*D_u/M_u %.3f,  mean env cloud %.4f g/kg,  mean q_c_u %.4f g/kg,"
-                   "  mean detrained/carried %.2f   (ATM_MC_QC_DETRAIN = %d, ATM_MC_EVAP_LIMIT = %d, ATM_MC_QVD = %d, ATM_MC_ED_AREA = %d)\n",
-                   n2, n_neg, sr / n2, 1e3 * sc / n2, 1e3 * sq / n2, sratio / n2, (int)qc_detrain, (int)mc_evap_limit, mcQvd(), (int)mc_ed_area);
+                   "  mean detrained/carried %.2f   (ATM_MC_QC_DETRAIN = %d, ATM_MC_EVAP_LIMIT = %d, ATM_MC_QVD = %d, ATM_MC_ED_AREA = %d, ATM_MC_INLINE = %d, iter_prec = %d)\n",
+                   n2, n_neg, sr / n2, 1e3 * sc / n2, 1e3 * sq / n2, sratio / n2, (int)qc_detrain, (int)mc_evap_limit, mcQvd(), (int)mc_ed_area, mc_inline, m.iter_prec);
     }
 
     static bool mcDiag(){

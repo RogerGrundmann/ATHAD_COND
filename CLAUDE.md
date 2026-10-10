@@ -381,10 +381,15 @@ should be re-examined.
   the answer (3e7 mm/a is 82 m of rain a day). **Every convective-rain number recorded on
   2026-10-10 is the odd phase, including "the downdraft re-evaporates everything".**
   `ATM_MC_ED_AREA` (upstream `c8f1489`, default 0: `e_d` weighted by the rain-shaft area like
-  `e_p`) is ported and cannot show while that is so. The repair is to evaluate `e_d` / `e_p` at the
-  flux ARRIVING at each level inside `downdraftRecurrence`'s walk — a restructuring, NOT DONE; a
-  self-consistent probe put the demand at 0.3x the generation with `QVD=1` + area weighting.
-  **Do not tune a convective constant, and do not change `iter_prec`, before that is settled.**
+  `e_p`) is ported and cannot show while that is so.
+  **`ATM_MC_INLINE` (default 0, not an upstream knob) removes the cycle**: 1 evaluates `e_d` / `e_p`
+  at the flux arriving at each level inside `downdraftRecurrence`'s walk, 2 also forms `g_p` from
+  the same pass's `q_c_u` inside `updraftRecurrence`. With 2 the result is identical to every
+  printed digit for `iter_prec` 3, 4, 5 and 6. **The consistent answer: 2.33e7 mm/a of convective
+  rain is formed and none reaches the ground — the downdraft evaporates 91 %, the sub-cloud layer
+  9 %, all of it backed.** The probe's "0.3x" is refuted. 2 iterations only.
+  **Do not tune a convective constant with `ATM_MC_INLINE` unset, and read no convective-rain
+  number from the default `iter_prec` = 3 as a result.**
 - **Field names changed 2026-08-20** (ported from ATHAD README item 61). The Brunt-Vaisala
   frequency squared is `brunt_N2` in the code and `BruntVaisala_N2` in the VTK files — it used to
   be `N2`, in the same file as nitrogen's `q_N2`. The eight species are written under bare names

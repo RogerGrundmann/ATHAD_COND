@@ -321,11 +321,56 @@ convergence at 4-5" — describes the lag and did not see the cycle.
 The self-consistent value needs `e_d` and `e_p` evaluated at the flux arriving at each level,
 inside `downdraftRecurrence`'s own downward walk — a restructuring, not a port (upstream has the
 same lag, and there one level does not usually ask for all the rain, so it shows less;
-not checked in that tree). NOT DONE.
+not checked in that tree). NOT DONE. **(Done the same day as `ATM_MC_INLINE`, next subsection.)**
 
 **Byte check** (`python/run_eda.sh`): the binary before all of today's changes against the new
 one with every knob unset, 20 of 20 files (2 iterations, 1 thread); control `ED_AREA=1` with
 `QVD=1` against `QVD=1` alone, 2 of 20 (20 iterations, 8 threads).
+
+### `ATM_MC_INLINE` (2026-10-10, default 0): the sub-iteration made pass-count independent
+
+Not an upstream knob. `=1` evaluates `e_d` and `e_p` inside `downdraftRecurrence`'s downward
+walk, at the flux arriving at the level plus the rain made there, with the law, the deficit
+(`qvDown`) and the area weighting exactly as `downdraftEntrainment` writes them. `=2` also forms
+`g_p` inside `updraftRecurrence`'s upward walk, from the `q_c_u` the SAME pass has just computed
+on the level below, before it is debited from the level above. The gates are unchanged
+(nothing on the first pass, nothing where `is_land || t <= t_00`).
+
+`ATM_MC_QC_DETRAIN=1 ATM_MC_EVAP_LIMIT=1 ATM_MC_ED_AREA=1 ATM_MC_QVD=1`, 2 iterations from
+scratch, 3 threads, only `<iter_prec>` changed (`python/run_in<mode>_<iter_prec>`); generation
+in mm/a at the first and second call, and where the rain goes at the second:
+
+| `iter_prec` | lagged (previous subsection) | `ATM_MC_INLINE=1` | `ATM_MC_INLINE=2` |
+|---|---|---|---|
+| 3 | 7.68e6, 5.45e6 → ground 0 | 7.68e6, 5.45e6 → ground 0 | **2.470e7, 2.329e7 → ground 0** |
+| 4 | 3.17e7, 3.07e7 → ground 2.98e7 | 3.17e7, 3.07e7 → ground 0 | **2.470e7, 2.329e7 → ground 0** |
+| 5 | 9.92e6, 7.30e6 → ground 0 | 9.92e6, 7.30e6 → ground 0 | **2.470e7, 2.329e7 → ground 0** |
+| 6 | 3.01e7, 2.93e7 → ground 2.74e7 | 3.01e7, 2.93e7 → ground 0 | **2.470e7, 2.329e7 → ground 0** |
+
+- **Mode 2 is identical for 3, 4, 5 and 6 passes to every printed digit** — generation
+  24 702 532.5162 and 23 289 005.7756 mm/a, `e_d` 23 126 676.4427 and 21 243 803.7100, `e_p`
+  1 575 856.0735 and 2 045 202.0655, the cap census cell for cell. The cycle is gone.
+- **Mode 1 removes the evaporation's flip and leaves the generation's**: the ground is 0 at every
+  pass count, but the generation still alternates 5-10e6 / 3e7, because `g_p` is still formed
+  from the previous pass's condensate. That is why mode 2 exists.
+- **THE SELF-CONSISTENT ANSWER IS THAT NO CONVECTIVE RAIN REACHES THE GROUND**: of 2.33e7 mm/a
+  generated, the downdraft evaporates **91.2 %** and the sub-cloud layer **8.8 %**, all of it
+  backed by rain that exists (unmet demand 0). So the lagged scheme's "0" was the right number
+  for the wrong reason, and its "3e7" was not a number at all.
+- **The 0.3x computed two subsections above is refuted a second time, now by the consistent
+  scheme.** It was evaluated on the odd phase's state, where the generation is 4-5x smaller than
+  the consistent one, and it did not include `e_p`. What does hold from that subsection is its
+  point 3: a downdraft carrying 0.3 of this updraft's mass flux can absorb about three times
+  the rain formed.
+- `MC_t` is truncated in 78 627 cells (2.01 %), none beyond 2x; `MC_q` in none.
+
+**Byte check** (`python/run_inl.sh`): the binary before all of today's changes against this
+build with every knob unset, 20 of 20 files (2 iterations, 1 thread).
+
+**Not done:** nothing longer than 2 iterations was run with this knob; the
+large-scale effect is not measured; `e_l`, the detrainment `D_u` at the LFS and
+`CloudBaseUpdate` still depend on the pass number by construction (first pass against later
+ones), which the identity across 3-6 passes shows does not matter from the third pass on.
 
 ## The background opacity, split per species — a no-op that stopped being one
 
