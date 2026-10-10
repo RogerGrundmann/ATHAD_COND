@@ -19,6 +19,69 @@ ground to ~177 km and *nothing condenses*; here water is subcritical everywhere 
 condensation is live from the sea surface up, so the code paths ATHAD spent seventeen
 defect-fixes making inert are the ones this model depends on.
 
+## Three instruments from upstream, and what they read on their first call (2026-10-10)
+
+`ATM_SATADJ_DIAG`, `ATM_MC_DIAG` and `ATM_MC_CAP_DIAG`, all **print-only and default off**, ported
+from `ATOM_Precipitation` (`03c8451`, `11ec280`, and `15fd99a` / `e8d06ce` / `f6f5642`), where
+between 2026-08-31 and 2026-09-24 they attributed that tree's moist-physics defects one by one.
+They are here first because the repairs that followed them upstream are not yet ported, and no
+repair should be ported into a tree that cannot measure it.
+
+| knob | where | what it prints |
+|---|---|---|
+| `ATM_SATADJ_DIAG=1` | `SaturationAdjustment.h` | the routine's water budget per call, clip by clip, in mm of column water: `entry_clip`, `phase_split`, `cold_delete` in `adjustSaturation`; `neg_clip`, `ceiling`, `impossible`, `supersat`, `cap`, `fade` in `clampAndFade`; the total, the unattributed remainder, and the running sum |
+| `ATM_MC_DIAG=1` | `MoistConvection.h` | the convective rain budget as an identity, generation − applied `e_d` − applied `e_p` = ground, beside the model's own `P_conv`; the evaporative demand that met no rain; the deep / shallow / midlevel census; `q_c_u`, `M_u`, `sigma_p`, base and LFS heights; sub-cloud RH |
+| `ATM_MC_CAP_DIAG=1` | `MoistConvection.h` | how many cells each of the four tendency caps truncates and by how much (> 2x, > 10x, > 100x), `MC_t` split into its mass-flux and latent halves, and where the over-cap cells sit |
+
+**What had to change against upstream.** The shallow / midlevel tests are fractions of the
+surface pressure (`f_stat_*`); saturation is `SaturationH2O`'s with the exact mass fraction, and
+a cell with `q_sat >= 1` has no relative humidity and is left out of the RH means; the rain walk
+ends at level 1 because this tree sets `P_conv[0] = P_conv[1]`; the saturation budget has three
+buckets upstream does not need (`ceiling`, `impossible`, and graupel in the total, since
+`evaporateWhereImpossible` empties it); the cap census is a SECOND pass after `rhsForcing()`
+instead of counters inside it, so that `rhsForcing()` is untouched but for reading its three
+caps from one definition (`McCaps`). Upstream's later probes under `ATM_MC_DIAG` split by land
+and ocean and by Earth regions and are not carried.
+
+**Print-only, verified.** 4 iterations from scratch, 1 thread, `config_port_new.xml` with `nm` = 4
+and `checkpoint` = 2 (`python/run_dg_pre`, `run_dg_new`, `run_dg_on`): the binary before the
+change against the new one with the knobs unset, **20 of 20 output files byte-identical**; the
+new one unset against all three knobs set, **20 of 20**. No control arm was run (nothing shows
+that this comparison would have caught a difference), and the printed budget figures are OpenMP
+reductions of doubles, so their last digits may move with the thread count.
+
+**First readings** — 20 iterations from scratch, 8 threads, all three on (`python/run_dg_20`,
+eleven moist calls, exit 0). They are readings, not diagnoses; none has been followed up.
+
+1. **`cloud_cap` deletes about 19-22 mm of column water in every call but the first**, −22.23
+   falling to −19.16 mm, **−202 mm over eleven calls** against a precipitable water of
+   160 626 mm (0.13 %). The cap (`cloud_cap` = 0.05 kg/kg) is 99 % of everything this routine
+   removes. Its comment says it "SETS the condensate rather than bounding a pathology"; the
+   budget puts a number on what that costs.
+2. **The cold fade removes 0.29 mm per call**, steady from the second call — the sigmoid upstream
+   measured as "a global exponential decay on cloud water" (`dfcfd7c`), present here unchanged.
+3. **The phase split creates water**, +0.0012 rising to +0.0056 mm per call (+0.054 mm in eleven
+   calls): the defect `ATM_SAT_PHASE_AVAIL` repairs, default off, now with a size. It is 3 500x
+   smaller than the cap's deletion.
+4. `entry_clip`, `cold_delete`, `neg_clip` and `ceiling` are exactly zero; `impossible` and
+   `supersat` are zero to 1e-17. Both budgets close: unattributed ≤ 8e-15 mm.
+5. **Convective rain generation is exactly zero** — `g_p` 0.0000 mm/a in all eleven calls, and
+   the model's own `P_conv` at the surface 0.0000 — **although every column is active and
+   classified deep** (100 %, none shallow or midlevel), every column reaches a level with
+   `K_p > 0`, the updraft carries condensate (mean `q_c_u` 0.29 g/kg over 26 cells per column, max
+   7.8 g/kg) and base and LFS are never on adjacent levels (mean base 1.8 km, LFS 24.7 km).
+   So the scheme convects everywhere and rains nowhere. **The cause is not established.** Two
+   things in the code are candidates and neither was tested: `g_p` is formed only where
+   `t_u >= t_0` and only from the second `iter_prec` pass, and `updraftRecurrence` zeroes it
+   again where `is_land(...) || t_u <= t_00`.
+6. **Mean cloud-base mass flux is 11.4 kg/(m2 s)** (12.9 at the first call), where the
+   inherited comments call ~0.3 healthy on Earth; `mc_M_max` is 100 here.
+7. **Of the four caps only `MC_q` binds: 43 439 cells, 1.11 % of the fluid, and never beyond
+   2x** (59 235 at the first call). `MC_t`, `MC_v`, `MC_w` are truncated in 0 cells, in both
+   halves of `MC_t`. So ATHAD's item 53 concern — `MCt_max` as an Earth constant bounding this
+   column — does not show at 20 iterations with `g_p` at zero; it has to be read again once
+   the convection rains.
+
 ## The background opacity, split per species — a no-op that stopped being one
 
 Ported from ATHAD (its README item 60), where `kappa_bg` = 1e-6 m2/kg — the value of a

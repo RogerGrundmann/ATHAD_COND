@@ -343,6 +343,18 @@ should be re-examined.
 
 ## Open risks
 
+- **THREE PRINT-ONLY INSTRUMENTS FROM UPSTREAM, 2026-10-10: `ATM_SATADJ_DIAG`, `ATM_MC_DIAG`,
+  `ATM_MC_CAP_DIAG`** (README, first section). Default off; byte-identical off and on (20/20
+  files, 4 iterations, 1 thread). **Use them before and after any moist-physics change here.**
+  Their first readings, 20 iterations, 8 threads, none followed up: **`cloud_cap` deletes
+  ~19-22 mm of column water per moist call** (−202 mm in eleven calls, 0.13 % of the
+  precipitable water, 99 % of what `SaturationAdjustment` removes); the cold fade −0.29 mm per
+  call; the phase split creates +0.005 mm per call (`ATM_SAT_PHASE_AVAIL`'s defect, sized);
+  **convective rain generation `g_p` is exactly zero while 100 % of columns are active and
+  deep** with condensate in the updraft — cause NOT established; mean cloud-base `M_u` is
+  11.4 kg/(m2 s); of the four tendency caps only `MC_q` binds (1.11 % of cells, never > 2x).
+  **These are the instruments for the upstream repairs still to be ported**
+  (`ATM_MC_EVAP_LIMIT` first): do not port a repair without a reading on each side of it.
 - **Field names changed 2026-08-20** (ported from ATHAD README item 61). The Brunt-Vaisala
   frequency squared is `brunt_N2` in the code and `BruntVaisala_N2` in the VTK files — it used to
   be `N2`, in the same file as nitrogen's `q_N2`. The eight species are written under bare names

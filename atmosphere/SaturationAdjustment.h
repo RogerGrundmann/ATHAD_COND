@@ -39,6 +39,7 @@ public:
         reportGuard("post applyTopo");
         clampAndFade();
         reportGuard("post clampAndFade");
+        reportBudget();
         printReport();
 
         auto end = std::chrono::high_resolution_clock::now();
@@ -149,6 +150,64 @@ private:
     static inline const bool sat_superheat_guard = [](){
         const char* e = getenv("ATM_SAT_SUPERHEAT"); return e ? (atoi(e) != 0) : true; }();
 
+    // ATM_SATADJ_DIAG=1 -- THE WATER BUDGET OF THIS ROUTINE, CLIP BY CLIP. Print-only, default
+    // off: no field is written and no branch below changes; the sums are OpenMP reductions of
+    // doubles, so the PRINTED figures can move in their last digits with the thread count while
+    // every written field stays the same.
+    //
+    // Ported 2026-10-10 from ATOM_Precipitation `03c8451` (2026-09-08), where it attributed
+    // 100 % of that tree's SaturationAdjustment non-conservation to ONE clip, the phase split
+    // (the same defect ATM_SAT_PHASE_AVAIL repairs here). It answers, per call and in mm of
+    // column water (kg/m2, cos-lat global mean), where this routine creates or deletes water:
+    //
+    //   adjustSaturation   entry_clip    max(0, .) on c / cloud / ice at entry, in adjusted cells
+    //                      phase_split   evaporation debited to an EMPTY reservoir (the vapour
+    //                                    gains the step, max(0, q - d) discards the debit)
+    //                      cold_delete   cloud = ice = 0 where the loop's T < t_00
+    //   clampAndFade       neg_clip      the three negative clips
+    //                      ceiling       c > 1 - co2 cut back ("water deleted there")
+    //                      impossible    evaporateWhereImpossible in supercritical / superheated
+    //                                    cells: condensate -> vapour, short only by ITS ceiling
+    //                      supersat      the always-on supersaturation removal (conserving by
+    //                                    construction; non-zero means it is not)
+    //                      cap           cloud / ice cut at cloud_cap
+    //                      fade          c, cloud, ice *= alpha(T), the cold sigmoid
+    //
+    // "unattributed" is the routine's total minus its buckets and must read ~1e-16 of the
+    // column, or a bucket is missing. Total water is c + cloud + ice here, and + gr in
+    // clampAndFade because evaporateWhereImpossible empties the graupel too. NOT COUNTED: the
+    // top row i = im-1 (no layer above it to give a mass), and applyTopography(), which copies
+    // row i_topography onto row 0 and is the identity on this flat surface.
+    struct Budget {
+        double entry_clip = 0.0, phase_split = 0.0, cold_delete = 0.0, adj_total = 0.0;
+        double caf_neg = 0.0, caf_ceil = 0.0, caf_imp = 0.0, caf_supersat = 0.0,
+               caf_cap = 0.0, caf_fade = 0.0, caf_total = 0.0;
+        double w_lat = 0.0;
+        long   calls = 0;
+        double cum_adj = 0.0, cum_caf = 0.0;
+    };
+    static Budget& budget(){ static Budget b; return b; }
+    static bool diagOn(){
+        static const bool v = [](){ const char* e = getenv("ATM_SATADJ_DIAG");
+                                    return e && atoi(e) != 0; }();
+        return v;
+    }
+    double latWeight(int j) const {
+        return std::cos((j / (double)(m.jm - 1) - 0.5) * M_PI);
+    }
+    // Layer mass per unit area [kg/m2], so that mass * (kg/kg) is mm of column water.
+    double cellMass(int i, int j, int k) const {
+        if (i < m.i_topography[j][k] || i >= m.im - 1) return 0.0;
+        double rho = m.r_humid.x[i][j][k];
+        if (!AtomUtils::is_finite_safe(rho) || rho <= 0.0) rho = m.r_air;
+        return rho * (m.get_layer_height(i+1) - m.get_layer_height(i));
+    }
+    double latWeightSum() const {
+        double w = 0.0;
+        for (int j = 0; j < m.jm; j++) w += latWeight(j) * m.km;
+        return w;
+    }
+
     void computeSteps() {
         step.resize(m.im);
         for (int i = 0; i < m.im; i++)
@@ -183,9 +242,14 @@ private:
         // Physically, condensation only happens once a parcel has risen, cooled
         // adiabatically and reached its LCL aloft; the warm ocean surface is below
         // saturation by definition. So cloud forms from i = 1 up, not at i = 0.
-        #pragma omp parallel for collapse(2) schedule(static)
+        const bool diag = diagOn();
+        double b_entry = 0.0, b_phase = 0.0, b_cold = 0.0, b_total = 0.0;
+
+        #pragma omp parallel for collapse(2) schedule(static) \
+                reduction(+:b_entry,b_phase,b_cold,b_total)
         for (int i = 1; i < m.im - 1; i++) {
             for (int j = 0; j < m.jm; j++) {
+                const double wm_j = diag ? latWeight(j) : 0.0;
                 double *S_c_c_row = m.S_c_c.x[i][j];
                 double *c_row     = m.c.x[i][j];
                 double *cloud_row = m.cloud.x[i][j];
@@ -196,6 +260,9 @@ private:
 
                 for (int k = 0; k < m.km; k++) {
                     S_c_c_row[k] = 0.0;
+
+                    const double wm = diag ? wm_j * cellMass(i, j, k) : 0.0;        // ATM_SATADJ_DIAG
+                    const double q_t_raw = diag ? (c_row[k] + cloud_row[k] + ice_row[k]) : 0.0;
 
                     double q_v_old = std::max(0.0, c_row[k]);
                     double q_c_old = std::max(0.0, cloud_row[k]);
@@ -294,6 +361,7 @@ private:
                         // condensation is a bulk phase change of the atmosphere.
                         double q_v_hyp = q_v_b;
                         const double T_original = t_row[k] * m.t_0;
+                        double ps_cell = 0.0;       // ATM_SATADJ_DIAG: water the phase split creates in this cell
 
                         for (int iter = 1; iter <= satIters(); iter++) {
                             double CND = std::max(0.0, std::min(1.0,
@@ -357,6 +425,9 @@ private:
                                 d_cnd = d_q_v * CND;
                                 d_dep = d_q_v * DEP;
                             }
+
+                            if (diag) ps_cell += std::max(0.0, d_cnd - q_c_b)
+                                               + std::max(0.0, d_dep - q_i_b);
 
                             q_v_b += d_q_v;
                             q_c_b  = std::max(0.0, q_c_b - d_cnd);
@@ -497,6 +568,7 @@ private:
                                 q_c_b = q_c_old;
                                 q_i_b = q_i_old;
                                 T     = T_original;
+                                ps_cell = 0.0;      // the rejected step's water goes with it
                             }
                         }
 
@@ -506,15 +578,37 @@ private:
                             cloud_row[k] = q_c_old + alpha_entry * (q_c_b - q_c_old);
                             ice_row[k]   = q_i_old + alpha_entry * (q_i_b - q_i_old);
                             t_row[k]     = (T_original + alpha_entry * (T - T_original)) * inv_t_0;
+                            if (diag) {
+                                b_entry += wm * ((q_v_old + q_c_old + q_i_old) - q_t_raw);
+                                b_phase += wm * alpha_entry * ps_cell;
+                            }
                         }
  
+                        const double q_t_pre_cold = diag
+                            ? (c_row[k] + cloud_row[k] + ice_row[k]) : 0.0;
+
                         if (T < m.t_00) {
                             cloud_row[k] = 0.0;
                             ice_row[k]   = 0.0;
                         }
+
+                        if (diag) {
+                            const double q_t_now = c_row[k] + cloud_row[k] + ice_row[k];
+                            b_cold  += wm * (q_t_now - q_t_pre_cold);
+                            b_total += wm * (q_t_now - q_t_raw);
+                        }
                     }
                 }
             }
+        }
+
+        if (diag) {
+            Budget& b = budget();
+            if (b.w_lat <= 0.0) b.w_lat = latWeightSum();
+            b.entry_clip  = b_entry / b.w_lat;
+            b.phase_split = b_phase / b.w_lat;
+            b.cold_delete = b_cold  / b.w_lat;
+            b.adj_total   = b_total / b.w_lat;
         }
     }
 
@@ -575,9 +669,16 @@ private:
 
         long n_ceiling = 0;                    // cells hitting the water-vapour ceiling
 
-        #pragma omp parallel for collapse(2) schedule(static) reduction(+:n_ceiling)
+        const bool diag = diagOn();
+        double b_neg = 0.0, b_ceil = 0.0, b_imp = 0.0, b_ss = 0.0, b_cap = 0.0,
+               b_fade = 0.0, b_tot = 0.0;
+
+        #pragma omp parallel for collapse(2) schedule(static) \
+                reduction(+:n_ceiling,b_neg,b_ceil,b_imp,b_ss,b_cap,b_fade,b_tot)
         for (int i = 0; i < m.im; i++) {
             for (int j = 0; j < m.jm; j++) {
+                const double wm_j = diag ? latWeight(j) : 0.0;
+                double *gr_row    = m.gr.x[i][j];                               // ATM_SATADJ_DIAG reads it only
                 double *c_row     = m.c.x[i][j];
                 double *cloud_row = m.cloud.x[i][j];
                 double *ice_row   = m.ice.x[i][j];
@@ -585,9 +686,16 @@ private:
                 double *p_row     = m.p_stat.x[i][j];
 
                 for (int k = 0; k < m.km; k++) {
+                    const double wm = diag ? wm_j * cellMass(i, j, k) : 0.0;        // ATM_SATADJ_DIAG
+                    auto q_tot = [&](){ return c_row[k] + cloud_row[k] + ice_row[k] + gr_row[k]; };
+                    const double q_t_in = diag ? q_tot() : 0.0;
+
                     if (c_row[k]     < 0.0) c_row[k]     = 0.0;
                     if (cloud_row[k] < 0.0) cloud_row[k] = 0.0;
                     if (ice_row[k]   < 0.0) ice_row[k]   = 0.0;
+
+                    const double q_t_neg = diag ? q_tot() : 0.0;
+                    if (diag) b_neg += wm * (q_t_neg - q_t_in);
 
                     // ATHAD: water vapour has a physical CEILING and never had one.
                     //
@@ -607,6 +715,9 @@ private:
                     // A run where n_ceiling stays large is not to be trusted.
                     const double c_max = std::max(0.0, 1.0 - m.co2.x[i][j][k]);
                     if (c_row[k] > c_max) { c_row[k] = c_max; n_ceiling++; }
+
+                    const double q_t_ceil = diag ? q_tot() : 0.0;
+                    if (diag) b_ceil += wm * (q_t_ceil - q_t_neg);
 
                     double T_dim = t_row_nd[k] * m.t_0;
                     // Upper physical bound, well above the prescribed surface temperature.
@@ -635,6 +746,11 @@ private:
                                                T_dim, p_row[k], M_o);
                         if (T_dim >= AtmMixture::T_CRIT_H2O || q_s >= 1.0) {
                             IceSchemeCommon::evaporateWhereImpossible(m, T_dim, i, j, k);
+                            if (diag) {
+                                const double q_t_out = q_tot();
+                                b_imp += wm * (q_t_out - q_t_ceil);
+                                b_tot += wm * (q_t_out - q_t_in);
+                            }
                             continue;
                         }
                     }
@@ -737,23 +853,70 @@ private:
                         }
                     }
 
+                    const double q_t_ss = diag ? q_tot() : 0.0;
+                    if (diag) b_ss += wm * (q_t_ss - q_t_ceil);
+
                     // ---- Condensate upper bounds (CAP SAFETY NET) ----
                     if (cloud_row[k] > cloud_cap) cloud_row[k] = cloud_cap;
                     if (ice_row[k]   > cloud_cap) ice_row[k]   = cloud_cap;
+
+                    const double q_t_cap = diag ? q_tot() : 0.0;
+                    if (diag) b_cap += wm * (q_t_cap - q_t_ss);
 
                     // Existing cold fade: smoothly dry moisture toward 0 below t_00.
                     const double alpha = 1.0 / (1.0 + std::exp(-(T_dim - m.t_00) / fade_K));
                     c_row[k]     *= alpha;
                     cloud_row[k] *= alpha;
                     ice_row[k]   *= alpha;
+
+                    if (diag) {
+                        const double q_t_out = q_tot();
+                        b_fade += wm * (q_t_out - q_t_cap);
+                        b_tot  += wm * (q_t_out - q_t_in);
+                    }
                 }
             }
+        }
+
+        if (diag) {
+            Budget& b = budget();
+            if (b.w_lat <= 0.0) b.w_lat = latWeightSum();
+            b.caf_neg      = b_neg  / b.w_lat;
+            b.caf_ceil     = b_ceil / b.w_lat;
+            b.caf_imp      = b_imp  / b.w_lat;
+            b.caf_supersat = b_ss   / b.w_lat;
+            b.caf_cap      = b_cap  / b.w_lat;
+            b.caf_fade     = b_fade / b.w_lat;
+            b.caf_total    = b_tot  / b.w_lat;
         }
 
         if (n_ceiling > 0)
             std::cout << "      SaturationAdjustment: water-vapour ceiling c = 1 - co2 hit in "
                       << n_ceiling << " cells (water deleted there — see the note above)"
                       << std::endl;
+    }
+
+    // ATM_SATADJ_DIAG: one block per call. See the note at Budget.
+    void reportBudget() const {
+        if (!diagOn()) return;
+        Budget& b = budget();
+        b.calls++;
+        b.cum_adj += b.adj_total;
+        b.cum_caf += b.caf_total;
+        const double adj_un = b.adj_total - (b.entry_clip + b.phase_split + b.cold_delete);
+        const double caf_un = b.caf_total - (b.caf_neg + b.caf_ceil + b.caf_imp
+                                             + b.caf_supersat + b.caf_cap + b.caf_fade);
+        std::printf("      AGCM: [SATADJ BUDGET] call %ld, iter %d, mm of column water (cos-lat global mean):\n",
+                    b.calls, m.iter_n);
+        std::printf("        adjustSaturation  entry_clip %+.6e  phase_split %+.6e"
+                    "  cold_delete %+.6e  |  total %+.6e  unattributed %+.6e\n",
+                    b.entry_clip, b.phase_split, b.cold_delete, b.adj_total, adj_un);
+        std::printf("        clampAndFade      neg_clip %+.6e  ceiling %+.6e  impossible %+.6e"
+                    "  supersat %+.6e  cap %+.6e  fade %+.6e  |  total %+.6e  unattributed %+.6e\n",
+                    b.caf_neg, b.caf_ceil, b.caf_imp, b.caf_supersat, b.caf_cap, b.caf_fade,
+                    b.caf_total, caf_un);
+        std::printf("        cumulative        adjustSaturation %+.6e   clampAndFade %+.6e"
+                    "   both %+.6e\n", b.cum_adj, b.cum_caf, b.cum_adj + b.cum_caf);
     }
 
     void printReport() const {
