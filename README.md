@@ -70,10 +70,9 @@ eleven moist calls, exit 0). They are readings, not diagnoses; none has been fol
    classified deep** (100 %, none shallow or midlevel), every column reaches a level with
    `K_p > 0`, the updraft carries condensate (mean `q_c_u` 0.29 g/kg over 26 cells per column, max
    7.8 g/kg) and base and LFS are never on adjacent levels (mean base 1.8 km, LFS 24.7 km).
-   So the scheme convects everywhere and rains nowhere. **The cause is not established.** Two
-   things in the code are candidates and neither was tested: `g_p` is formed only where
-   `t_u >= t_0` and only from the second `iter_prec` pass, and `updraftRecurrence` zeroes it
-   again where `is_land(...) || t_u <= t_00`.
+   So the scheme convects everywhere and rains nowhere. **The cause was found the same day —
+   next subsection.** (The two candidates first written here, the `t_u >= t_0` gate and the
+   `is_land || t_u <= t_00` reset, are both EXCLUDED: every cell is above `t_0`, 388-500 K.)
 6. **Mean cloud-base mass flux is 11.4 kg/(m2 s)** (12.9 at the first call), where the
    inherited comments call ~0.3 healthy on Earth; `mc_M_max` is 100 here.
 7. **Of the four caps only `MC_q` binds: 43 439 cells, 1.11 % of the fluid, and never beyond
@@ -81,6 +80,94 @@ eleven moist calls, exit 0). They are readings, not diagnoses; none has been fol
    halves of `MC_t`. So ATHAD's item 53 concern — `MCt_max` as an Earth constant bounding this
    column — does not show at 20 iterations with `g_p` at zero; it has to be read again once
    the convection rains.
+
+### Why the convection rains nowhere: the updraft detrains the ENVIRONMENT's cloud (2026-10-10)
+
+`[MC-GP]`, a census added to `ATM_MC_DIAG` for this question, counts the three things
+`g_p = K_p * q_c_u` needs in one cell — `t >= t_0`, a level more than `delta_i_c` above cloud
+base, and updraft condensate — and their intersections, stage by stage through the convective
+passes (the stage-by-stage form was a temporary probe; one line at the end of the call is kept).
+
+- **Before the first `updraftRecurrence` the condensate is there**: `q_c_u > 0` in 1 735 765 of
+  1 800 026 cells (the seed `initUpdraft` writes), and all three conditions hold in 1 671 504.
+- **After it, `q_c_u > 0` in 64 261 cells — exactly one per active column — and all three
+  conditions hold in 0.** The surviving cell is the first level above cloud base, the one level
+  where `K_p` = 0 (within `delta_i_c` = 500 m of the base). Nothing changes in passes 2 and 3.
+- **The line that does it** is the condensate recurrence,
+  `M_u*q_c_u + step*(-D_u*cloud - rho*g_p)`: it detrains `cloud`, **the environment's cloud
+  water**, out of the updraft's condensate, where a detraining updraft loses its own `q_c_u`.
+  Measured at the step base+1 → base+2: mean `step*D_u/M_u` = **0.89** (one level detrains 89 %
+  of the mass flux — `eps_u` = 0.2/`R_cloud` = 2e-3 /m on ~450 m layers), mean environment cloud
+  **36.5 g/kg** against **7.1 g/kg** carried, so the detrained term is **4.6x** what the updraft
+  holds, **in 64 261 of 64 261 columns**. `q_c_u` goes negative and is clipped to zero from
+  there up.
+- **The parcel does condense** — `c_u > 0` in every cell above the first — and that condensate
+  is among what is wiped.
+
+**Upstream has the same line and repaired it as `ATM_MC_QC_DETRAIN`** (`f90c462`, 2026-10-01,
+default off there). On Earth the environment's cloud is ~0.009 g/kg, so the same error
+UNDER-detrains and the condensate grows; here the environment holds five times what the updraft
+does and the error annihilates it. One defect, opposite sign of consequence — the knob is
+ported under its upstream name, **default 0**.
+
+**THE A/B, AND WHY THE KNOB MUST NOT BE SET ALONE.** `ATM_MC_QC_DETRAIN=1`, 20 iterations from
+scratch, 8 threads (`python/run_el_q`): `q_c_u > 0` in 1 554 466 cells, `g_p > 0` in 445 529,
+**generation 5.2 million mm/a** (7.7 million at the first call). And with rain forming, the
+downdraft and sub-cloud evaporation `e_d + e_p` — which `rhsForcing()` applies in full to `MC_t`
+and `MC_q` whether or not the rain exists — **demand 13 432x the generation** (UNMET
+7.0e10 mm/a): **`MC_t` truncated in 51.1 % of all cells, its latent half > 100x the cap in
+32.4 %, 100 % of it cooling** (largest term `e_d` in 80.8 %, `e_p` in 19.2 %), and `MC_q`
+truncated in 52.2 %, > 100x in 9.8 %. Half the atmosphere on a cap.
+
+### `ATM_MC_EVAP_LIMIT` (2026-10-10, default 0)
+
+Ported from `ATOM_Precipitation` `e8d06ce`, where it has been the default since 2026-09-22 and
+the knob is retired. In `downdraftRecurrence`, before `P_conv` is formed: the level's `e_d + e_p`
+is charged against the rain arriving plus the rain made there and both are scaled together; at
+`i = 0`, where the flux passes through unchanged, both are zeroed. Same site and same
+arithmetic as upstream.
+
+Four arms, 20 iterations from scratch, 8 threads, all three instruments on, final call:
+
+| | default (`run_dg_20`) | `EVAP_LIMIT` alone (`run_el_e`) | `QC_DETRAIN` alone (`run_el_q`) | both (`run_el_qe`) |
+|---|---|---|---|---|
+| generation `g_p`, mm/a | 0 | 0 | 5 216 971 | 5 203 328 |
+| UNMET evaporative demand, mm/a | 0 | 0 | 7.0e10 (13 432x) | **0** |
+| `MC_t` truncated, % of cells | 0 | 0 | 51.12 (> 100x: 32.33) | **0** |
+| `MC_q` truncated, % of cells | 1.108 | 1.108 | 52.23 (> 100x: 9.83) | **1.108** |
+| share of generation taken by `e_d` | – | – | 100 % | 100 % |
+| convective rain at the ground, mm/a | 0 | 0 | 0 | **0** |
+| mean `q_c_u`, g/kg | 0.289 | 0.289 | 1.355 | 1.355 |
+| precipitation average (ice scheme), mm/a | 199 163.86 | 199 163.86 | 198 629.24 | 199 163.91 |
+| `cloud_cap` deletion, final call, mm | −19.156 | −19.156 | −19.319 | −19.158 |
+| max T, °C | 238.881236 | 238.881236 | 238.883411 | 238.881248 |
+
+- **Alone it is a null, as it must be**: with `g_p` = 0 there is no demand to limit. Every printed
+  figure equals the default's, and at 2 iterations, 1 thread, the output is byte-identical
+  (20 of 20 files).
+- **With `ATM_MC_QC_DETRAIN` it removes the whole eruption**: unmet demand to zero, `MC_t` off its
+  cap everywhere, `MC_q` back to the default's 1.108 %. At the first call 39 849 cells (1.02 %)
+  still exceed the `MC_t` cap, all cooling, all from `e_l` (the detrained condensate) and none
+  beyond 2x; by the last call there are none.
+- **AND THE CONVECTION STILL DOES NOT RAIN AT THE GROUND.** The downdraft evaporation takes
+  **100 % of the generation**, now within what exists. So the two knobs together turn "no rain
+  is formed" into "all rain formed is re-evaporated by the downdraft", and the large-scale state
+  barely notices (precipitation average 199 163.86 → 199 163.91 mm/a, max T in the 8th digit).
+  Upstream met the same wall — "`e_d` takes 100 % of it" — and its repair is `ATM_MC_QVD`
+  (`6b49292`): the downdraft humidity is built as `0.5*(cloud + 0.98*q_sat)`, **half of the
+  cloud-WATER array**, where Tiedtke's mix is environment VAPOUR. That line is here unchanged
+  (`MoistConvection.h`, twice in `downdraftEntrainment`) and with 36 g/kg of cloud it is not a
+  small error. NOT PORTED, not measured here: it is the next candidate, not a diagnosis.
+
+**Byte checks** (2 iterations from scratch, 1 thread, `python/run_vqcd.sh`, `run_el.sh`):
+the binary before all of this against the new one with every knob unset, **20 of 20 files**;
+the three instruments on, 20 of 20; `ATM_MC_EVAP_LIMIT=1` alone, 20 of 20; controls
+`ATM_MC_QC_DETRAIN=1` against unset 7 of 20, and both knobs against `QC_DETRAIN` alone 2 of 20.
+
+**Not measured:** anything longer than 20 iterations; either knob in ATHAD or ATHAD_PERID;
+what happens to the water the parcel condenses (`c_u` debits the environment's vapour through
+`MC_q`) while its condensate is wiped — on the default branch that is a candidate water sink,
+and the column budget instrument upstream has for it (`ColumnWaterBudget.h`) is not ported.
 
 ## The background opacity, split per species — a no-op that stopped being one
 

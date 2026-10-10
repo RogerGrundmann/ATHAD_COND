@@ -351,10 +351,22 @@ should be re-examined.
   precipitable water, 99 % of what `SaturationAdjustment` removes); the cold fade −0.29 mm per
   call; the phase split creates +0.005 mm per call (`ATM_SAT_PHASE_AVAIL`'s defect, sized);
   **convective rain generation `g_p` is exactly zero while 100 % of columns are active and
-  deep** with condensate in the updraft — cause NOT established; mean cloud-base `M_u` is
-  11.4 kg/(m2 s); of the four tendency caps only `MC_q` binds (1.11 % of cells, never > 2x).
-  **These are the instruments for the upstream repairs still to be ported**
-  (`ATM_MC_EVAP_LIMIT` first): do not port a repair without a reading on each side of it.
+  deep**; mean cloud-base `M_u` is 11.4 kg/(m2 s); of the four tendency caps only `MC_q` binds
+  (1.11 % of cells, never > 2x).
+- **THE CONVECTION RAINS NOWHERE BECAUSE THE UPDRAFT DETRAINS THE ENVIRONMENT'S CLOUD, AND THE TWO
+  KNOBS THAT REPAIR IT ARE BOTH DEFAULT 0** (2026-10-10, README). The condensate recurrence
+  subtracts `step*D_u*cloud` — the ENVIRONMENT's cloud, 36.5 g/kg — from an updraft carrying
+  7.1 g/kg, at `step*D_u/M_u` = 0.89: 4.6x what it holds, in 64 261 of 64 261 columns, so
+  `q_c_u` is zero from the second level up and `g_p = K_p*q_c_u` never forms.
+  **`ATM_MC_QC_DETRAIN=1`** (upstream `f90c462`) detrains `q_c_u` instead and rain forms,
+  5.2e6 mm/a — **AND MUST NOT BE SET ALONE**: the evaporation demand is then 13 432x the
+  generation, applied in full by `rhsForcing()`, and `MC_t` sits on its cap in 51 % of all cells,
+  all cooling. **`ATM_MC_EVAP_LIMIT=1`** (upstream `e8d06ce`, the default there) charges
+  `e_d + e_p` against the rain that exists: alone a byte-identical null, with `QC_DETRAIN` it
+  takes the unmet demand and the `MC_t` truncation to zero. **With both, the downdraft still
+  re-evaporates 100 % of the generation and nothing reaches the ground** — the next candidate is
+  upstream's `ATM_MC_QVD` (the downdraft humidity is built from the cloud-WATER array), not
+  ported. 20 iterations only; the flip of either default is the user's call.
 - **Field names changed 2026-08-20** (ported from ATHAD README item 61). The Brunt-Vaisala
   frequency squared is `brunt_N2` in the code and `BruntVaisala_N2` in the VTK files — it used to
   be `N2`, in the same file as nitrogen's `q_N2`. The eight species are written under bare names

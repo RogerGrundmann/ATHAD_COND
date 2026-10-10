@@ -53,6 +53,10 @@ namespace AtomMoistConvection {
     // step*D can exceed M(i-1) on the deep layers. Form the two weights, floor both at zero,
     // divide by their sum. Bounded by construction, identical to the old expression whenever
     // nothing was clamped, and it needs no ceiling constant.
+    static const bool mc_evap_limit = [](){
+        const char* e = getenv("ATM_MC_EVAP_LIMIT"); return (e && atoi(e) != 0); }();
+    static const bool qc_detrain = [](){
+        const char* e = getenv("ATM_MC_QC_DETRAIN"); return (e && atoi(e) != 0); }();
     static const bool updraft_bounded = [](){
         const char* e = getenv("ATM_MC_UNBOUNDED_UPDRAFT"); return !(e && atoi(e) != 0); }();
 
@@ -1179,6 +1183,22 @@ void findCloudBaseLFS() {
                     double dummy_q_c_u = M_u_prev * m.q_c_u.x[i-1][j][k]
                         + step_prev * (-m.D_u.x[i-1][j][k] * cloud.x[i-1][j][k]
                         - r_h_prev * m.g_p.x[i-1][j][k]);
+                    // ATM_MC_QC_DETRAIN=<0|1>, default 0 = unchanged (upstream ATOM_Precipitation `f90c462`).
+                    // The line above detrains `cloud` -- the ENVIRONMENT's cloud water -- out of the updraft's
+                    // condensate, where a detraining updraft loses its OWN q_c_u. Upstream the environment's
+                    // cloud is ~0.009 g/kg and the error under-detrains; HERE IT IS 36.5 g/kg against 7.1 g/kg
+                    // carried, at step*D_u/M_u = 0.89, so one level takes 4.6x what the updraft holds:
+                    // q_c_u goes negative at base+2 in EVERY column (64 261 of 64 261, measured 2026-10-10), is
+                    // clipped to zero from there up, and g_p = K_p*q_c_u is identically zero -- the scheme
+                    // convects everywhere and rains nowhere. =1 detrains q_c_u.
+                    //
+                    // DO NOT SET IT ALONE. With it, g_p forms (7.7e6 mm/a at the first call) and the downdraft
+                    // and sub-cloud evaporation, which rhsForcing() applies in full whether or not the rain
+                    // exists, demand 11 000x the generation: MC_t's latent half exceeds its cap in 55 % of
+                    // all cells, 100 % of it cooling, and MC_q in 56 %. That is upstream's ATM_MC_EVAP_LIMIT
+                    // defect (`e8d06ce`), not yet ported; this knob waits for it.
+                    if (qc_detrain)
+                        dummy_q_c_u += step_prev * m.D_u.x[i-1][j][k] * (cloud.x[i-1][j][k] - m.q_c_u.x[i-1][j][k]);
 
                     double dummy_vel_v_u = M_u_prev * m.v_u.x[i-1][j][k]
                         + step_prev * m.E_u.x[i-1][j][k] * m.v.x[i-1][j][k];
@@ -1398,6 +1418,39 @@ void findCloudBaseLFS() {
                         m.q_v_d.x[i][j][k] = 0.0;
                         m.u_d.x[i][j][k]   = 0.0; m.v_d.x[i][j][k] = 0.0; m.w_d.x[i][j][k] = 0.0;
                         m.s_d.x[i][j][k]   = 1.0; m.e_d.x[i][j][k] = 0.0; m.e_p.x[i][j][k] = 0.0;
+                    }
+
+                    // ATM_MC_EVAP_LIMIT=<0|1>, default 0 = unchanged. Ported 2026-10-10 from
+                    // ATOM_Precipitation `e8d06ce` (2026-09-22), where it is the default and its knob
+                    // has since been retired.
+                    //
+                    // The recurrence below FLOORS P_conv at zero, so an evaporation demand larger
+                    // than the rain present is silently truncated in the RAIN FLUX -- while
+                    // rhsForcing() applies the FULL e_d + e_p to MC_t (cooling) and MC_q
+                    // (moistening). That is evaporation of water that does not exist. =1 charges
+                    // the level's evaporation against the rain ARRIVING plus the rain MADE there,
+                    // scaling e_d and e_p together. At i = 0 the recurrence passes the flux through
+                    // unchanged, so nothing evaporated there is backed: both are zeroed.
+                    //
+                    // In this tree the defect is dormant by default, because g_p is identically
+                    // zero (see ATM_MC_QC_DETRAIN in updraftRecurrence) and with it e_d and e_p;
+                    // it wakes the moment the updraft condensate survives. The README section of
+                    // 2026-10-10 has the measurement of both knobs together.
+                    if(mc_evap_limit){
+                        if(i == 0){
+                            m.e_d.x[i][j][k] = 0.0;
+                            m.e_p.x[i][j][k] = 0.0;
+                        }else{
+                            const double mdz    = step[i] * m.r_humid.x[i][j][k];               // kg/m2
+                            const double supply = std::max(0.0, m.P_conv.x[i+1][j][k]
+                                                              + mdz * m.g_p.x[i][j][k]);     // kg/(m2 s)
+                            const double demand = mdz * (m.e_d.x[i][j][k] + m.e_p.x[i][j][k]);
+                            if(demand > supply){
+                                const double f = (demand > 0.0) ? supply / demand : 0.0;
+                                m.e_d.x[i][j][k] *= f;
+                                m.e_p.x[i][j][k] *= f;
+                            }
+                        }
                     }
 
                     // Precipitation from convection (skip i=0: flux arrives unchanged)
@@ -1915,6 +1968,69 @@ void findCloudBaseLFS() {
     // with the exact mass fraction, and a cell that is supercritical or superheated
     // (q_sat >= 1) has no relative humidity and is left out of the RH means; the walk runs to
     // level 1 because this tree's recurrence sets P_conv[0] = P_conv[1].
+    // [MC-GP], part of ATM_MC_DIAG (2026-10-10): WHY g_p IS OR IS NOT FORMED. Print-only.
+    //
+    // g_p = K_p * q_c_u needs three things in the same cell of an active column: t >= t_0,
+    // a level more than delta_i_c above cloud base (K_p > 0), and updraft condensate. The
+    // first line counts each and their intersections. The second looks at the one step that
+    // decides the third here: the condensate recurrence from base+1 to base+2,
+    //
+    //     M_u*q_c_u  -  step*D_u*cloud   (+ what the parcel condenses),
+    //
+    // and counts the columns where the DETRAINED ENVIRONMENT CLOUD alone is at least what the
+    // updraft carries. See ATM_MC_QC_DETRAIN at updraftRecurrence() for what it found.
+    void gpCensus() const {
+        using namespace AtomMoistConvection;
+        long n_col = 0, n_cell = 0, n_T = 0, n_K = 0, n_q = 0, n_TK = 0, n_TKq = 0, n_g = 0, n_cu = 0;
+        long n2 = 0, n_neg = 0;
+        double gmax = 0.0, sr = 0.0, sc = 0.0, sq = 0.0, sratio = 0.0;
+        for(int j = 1; j < m.jm-1; j++) for(int k = 1; k < m.km-1; k++){
+            const int i_base = i_Base_local[j][k], i_lfs = i_LFS_local[j][k];
+            if(i_base < 0 || i_lfs <= i_base) continue;
+            n_col++;
+            const bool sh = m.convection_mode >= 1 && (m.p_stat.x[i_base][j][k] - m.p_stat.x[i_lfs][j][k])
+                                                       < f_stat_diff * m.p_stat.x[0][j][k];
+            const bool md = m.convection_mode >= 2 && m.p_stat.x[i_base][j][k]
+                                                       < f_stat_midlevel * m.p_stat.x[0][j][k];
+            const double dic = (sh || md) ? 1.0e9 : (land_surf[j * m.km + k] ? 1000.0 : 500.0);
+            for(int i = i_base+1; i <= i_lfs; i++){
+                n_cell++;
+                const bool T = m.t.x[i][j][k] * m.t_0 >= m.t_0;
+                const bool K = height_table[i] > height_table[i_base] + dic;
+                const bool q = m.q_c_u.x[i][j][k] > 0.0;
+                if(T) n_T++;
+                if(K) n_K++;
+                if(q) n_q++;
+                if(T && K) n_TK++;
+                if(T && K && q) n_TKq++;
+                if(m.g_p.x[i][j][k] > 0.0) n_g++;
+                if(m.c_u.x[i][j][k] > 0.0) n_cu++;
+                gmax = std::max(gmax, m.g_p.x[i][j][k]);
+            }
+            if(i_lfs < i_base + 3) continue;
+            const int i1 = i_base + 1;
+            const double Mp = m.M_u.x[i1][j][k];
+            if(!(Mp > 0.0)) continue;
+            const double keep = Mp * m.q_c_u.x[i1][j][k];
+            const double lose = step[i1] * m.D_u.x[i1][j][k] * cloud.x[i1][j][k];
+            n2++;
+            if(lose >= keep) n_neg++;
+            sr += step[i1] * m.D_u.x[i1][j][k] / Mp;
+            sc += cloud.x[i1][j][k];
+            sq += m.q_c_u.x[i1][j][k];
+            sratio += (keep > 0.0) ? lose / keep : 0.0;
+        }
+        printf("      AGCM: [MC-GP] cells base+1..LFS of %ld active columns: %ld;  t >= t_0 in %ld,  K_p > 0 in %ld,"
+               "  q_c_u > 0 in %ld,  t & K_p in %ld,  all three in %ld;  g_p > 0 in %ld (max %.3e /s);"
+               "  parcel condensation c_u > 0 in %ld\n",
+               n_col, n_cell, n_T, n_K, n_q, n_TK, n_TKq, n_g, gmax, n_cu);
+        if(n2 > 0)
+            printf("      AGCM: [MC-GP] step base+1 -> base+2 in %ld columns: detrained ENVIRONMENT cloud >= the condensate the"
+                   " updraft carries in %ld;  mean step*D_u/M_u %.3f,  mean env cloud %.4f g/kg,  mean q_c_u %.4f g/kg,"
+                   "  mean detrained/carried %.2f   (ATM_MC_QC_DETRAIN = %d, ATM_MC_EVAP_LIMIT = %d)\n",
+                   n2, n_neg, sr / n2, 1e3 * sc / n2, 1e3 * sq / n2, sratio / n2, (int)qc_detrain, (int)mc_evap_limit);
+    }
+
     static bool mcDiag(){
         static const bool v = [](){
             const char* e = getenv("ATM_MC_DIAG"); return e && atoi(e) != 0; }();
@@ -2046,6 +2162,7 @@ void findCloudBaseLFS() {
         const double Pwy = Pwalk * s_per_year / w_tot, Pfy = Pfield * s_per_year / w_tot;
         auto pc = [&](double x){ return Gy > 0.0 ? 1e2 * x / Gy : 0.0; };
 
+        gpCensus();
         printf("      AGCM: [MC DIAG] iter %d.  active columns (i_LFS > i_base >= 0): "
                "%.2f %% of the globe, cos-lat weighted;  of those deep %.2f %%, shallow %.2f %%, "
                "midlevel %.2f %%;  columns reaching a level with K_p > 0: %.2f %%;"
