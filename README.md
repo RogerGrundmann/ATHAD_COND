@@ -256,7 +256,8 @@ Three things, in the order they matter:
    `sigma_p` (0.08 here), `e_d` does not. Weighted the same way — which is exactly upstream's
    `ATM_MC_ED_AREA` (`c8f1489`), unported — the demand is **0.3x the generation with `QVD=1` and
    0.7x with `QVD=2`**. That is the first combination today under which convective rain would
-   reach the ground; it is a number computed from the fields, NOT a run.
+   reach the ground; it is a number computed from the fields, NOT a run. **(Run the same day, next
+   subsection: the model does not do what this computation assumes.)**
 3. **Independently of this law, a downdraft this strong would take the rain anyway.** Tiedtke's
    own requirement — evaporate what keeps the descending air saturated — is `|M_d|*dq_sat` per
    level: `|M_d|` = 3.4 kg/(m2 s) (`gam_d` = 0.3 of a cloud-base `M_u` of 11) against a `q_sat` that
@@ -268,6 +269,63 @@ Three things, in the order they matter:
 
 **So: the coefficients `a_ev`, `b_ev` are not the thing to move.** The cheap next step is
 `ATM_MC_ED_AREA` with `ATM_MC_QVD=1`; the larger question behind it is point 3.
+
+### `ATM_MC_ED_AREA` (2026-10-10, default 0), and what it uncovered: THE ANSWER DEPENDS ON THE PARITY OF `iter_prec`
+
+Ported from `ATOM_Precipitation` `c8f1489` in upstream's form: `e_d` is evaluated in the rain
+shaft and weighted by its area, `sigma_p*E(P/sigma_p)`, as `e_p` already is.
+
+**The subsection above computed that with this and `ATM_MC_QVD=1` the demand would be 0.3x the
+generation and rain would reach the ground. Run, it does not** — 20 iterations from scratch,
+8 threads, `ATM_MC_QC_DETRAIN=1 ATM_MC_EVAP_LIMIT=1 ATM_MC_ED_AREA=1` (`python/run_ea0`,
+`run_ea1`, `run_ea2`):
+
+| | `QVD=0` | `QVD=1` | `QVD=2` |
+|---|---|---|---|
+| generation `g_p`, mm/a | 5 203 328 | 5 218 620 | 5 218 569 |
+| share taken by `e_d` | 100 % | 100 % | 100 % |
+| convective rain at the ground, mm/a | 0 | 0 | 0 |
+
+With `QVD=0` the output is **byte-identical** to the run without the knob (20 of 20 files against
+`run_el_qe`, at 8 threads): where the demand exceeds the supply before and after, the limiter
+returns the same numbers and the knob cannot show.
+
+**Why the computed 0.3x was not what the model does.** The probe evaluated the law at the rain
+ACTUALLY ARRIVING at each level, inside one downward walk. The model does not:
+`downdraftEntrainment` forms `e_d` and `e_p` from `P_conv` **as the previous `iter_prec` pass left
+it**, and `downdraftRecurrence` then walks the column with that fixed demand. So pass 2 sees
+pass 1's flux (zero: `g_p` is forced to 0 on the first pass) and evaporates nothing; pass 3 sees
+pass 2's UN-EVAPORATED flux, demands accordingly, and evaporates everything; a fourth pass would
+see pass 3's zero flux and evaporate nothing again.
+
+**Tested, and it is exactly that** — same knobs with `QVD=1`, 2 iterations from scratch, 8 threads,
+only `<iter_prec>` changed (`python/run_ip4`, `run_ip5`, `run_ip6`; first and second call):
+
+| `iter_prec` | generation, mm/a | share taken by `e_d` | convective rain at the ground, mm/a |
+|---|---|---|---|
+| 3 (the default) | 7.68e6, 5.45e6 | 100 %, 100 % | 0, 0 |
+| 4 | 3.17e7, 3.07e7 | 5.2 %, 2.9 % | **3.00e7, 2.98e7** |
+| 5 | 9.92e6, 7.30e6 | 100 %, 100 % | 0, 0 |
+| 6 | 3.01e7, 2.93e7 | 11.6 %, 6.5 % | **2.66e7, 2.74e7** |
+
+**The convective rain at the ground is 0 for an odd pass count and ~3e7 mm/a for an even one.**
+The sub-iteration is a period-2 oscillation, not a convergence, and the shipped `iter_prec` = 3
+samples the phase in which everything evaporates. The generation swings with it (5-10e6 against
+3e7), because the updraft's condensate is debited by the previous pass's `g_p` in the same lagged
+way. `param.py`'s note on `iter_prec` — "min 3 for evaporation to act on non-zero `P_conv`; check
+convergence at 4-5" — describes the lag and did not see the cycle.
+
+**Neither phase is the answer.** 3e7 mm/a is 82 metres of rain a day, 150x the ice scheme's whole
+199 164 mm/a; 0 is the other extreme. Every convective-rain figure in this section, and the
+"e_d takes 100 %" wall of the three subsections above, is the ODD phase of this cycle.
+The self-consistent value needs `e_d` and `e_p` evaluated at the flux arriving at each level,
+inside `downdraftRecurrence`'s own downward walk — a restructuring, not a port (upstream has the
+same lag, and there one level does not usually ask for all the rain, so it shows less;
+not checked in that tree). NOT DONE.
+
+**Byte check** (`python/run_eda.sh`): the binary before all of today's changes against the new
+one with every knob unset, 20 of 20 files (2 iterations, 1 thread); control `ED_AREA=1` with
+`QVD=1` against `QVD=1` alone, 2 of 20 (20 iterations, 8 threads).
 
 ## The background opacity, split per species — a no-op that stopped being one
 

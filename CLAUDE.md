@@ -371,8 +371,20 @@ should be re-examined.
   467x (mode 2), and `e_d` still takes 100 %. Its one visible effect under the limit is `MC_q`
   off its cap (1.108 % -> 0). **What remains is the evaporation law `e_d` itself** (`a_ev`,
   `b_ev`, charged on a 60 bar layer mass against a `q_sat` of hundreds of g/kg) — a reading, not
-  a diagnosis; upstream's `ATM_MC_ED_AREA` / `ATM_MC_ED_ABOVE_BASE` are unported. 20 iterations
-  only; the flip of any of the three defaults is the user's call.
+  a diagnosis. 20 iterations only; the flip of any of these defaults is the user's call.
+- **THE CONVECTIVE RAIN AT THE GROUND DEPENDS ON THE PARITY OF `iter_prec`, AND THE DEFAULT 3 IS THE
+  PHASE WHERE ALL OF IT EVAPORATES** (2026-10-10, README). `downdraftEntrainment` forms `e_d` and
+  `e_p` from `P_conv` as the PREVIOUS sub-iteration pass left it, so the passes alternate: no
+  evaporation, total evaporation, none, total. Measured with `ATM_MC_QC_DETRAIN=1
+  ATM_MC_EVAP_LIMIT=1 ATM_MC_ED_AREA=1 ATM_MC_QVD=1`: `iter_prec` 3 and 5 give **0 mm/a** at the
+  ground with `e_d` taking 100 %; 4 and 6 give **~3e7 mm/a** with `e_d` taking 3-12 %. Neither is
+  the answer (3e7 mm/a is 82 m of rain a day). **Every convective-rain number recorded on
+  2026-10-10 is the odd phase, including "the downdraft re-evaporates everything".**
+  `ATM_MC_ED_AREA` (upstream `c8f1489`, default 0: `e_d` weighted by the rain-shaft area like
+  `e_p`) is ported and cannot show while that is so. The repair is to evaluate `e_d` / `e_p` at the
+  flux ARRIVING at each level inside `downdraftRecurrence`'s walk — a restructuring, NOT DONE; a
+  self-consistent probe put the demand at 0.3x the generation with `QVD=1` + area weighting.
+  **Do not tune a convective constant, and do not change `iter_prec`, before that is settled.**
 - **Field names changed 2026-08-20** (ported from ATHAD README item 61). The Brunt-Vaisala
   frequency squared is `brunt_N2` in the code and `BruntVaisala_N2` in the VTK files — it used to
   be `N2`, in the same file as nitrogen's `q_N2`. The eight species are written under bare names

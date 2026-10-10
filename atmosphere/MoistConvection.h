@@ -53,6 +53,8 @@ namespace AtomMoistConvection {
     // step*D can exceed M(i-1) on the deep layers. Form the two weights, floor both at zero,
     // divide by their sum. Bounded by construction, identical to the old expression whenever
     // nothing was clamped, and it needs no ceiling constant.
+    static const bool mc_ed_area = [](){
+        const char* e = getenv("ATM_MC_ED_AREA"); return (e && atoi(e) != 0); }();
     static const bool mc_evap_limit = [](){
         const char* e = getenv("ATM_MC_EVAP_LIMIT"); return (e && atoi(e) != 0); }();
     static const bool qc_detrain = [](){
@@ -1149,6 +1151,27 @@ void findCloudBaseLFS() {
                         m.e_d.x[i][j][k] = 0.0;
                     else{
                         double precip_i = m.P_conv.x[i][j][k];
+                        // ATM_MC_ED_AREA=<0|1>, default 0 = unchanged. Ported 2026-10-10 from
+                        // ATOM_Precipitation `c8f1489` (2026-09-29, default 0 there too).
+                        //
+                        // e_d applies the rain-evaporation law to the GRID-MEAN flux and is then
+                        // charged to the whole layer, while e_p above carries the precipitating
+                        // area fraction sigma_p. =1 evaluates the law in the rain shaft, at
+                        // P/sigma_p, and weights it by sigma_p: sigma*E(P/sigma).
+                        //
+                        // Why it matters here more than upstream: a layer of this column holds
+                        // ~16 000 kg/m2, 20-50x an Earth layer, so the unweighted law asks for
+                        // all the rain arriving in 80-100 % of the levels even at a 2 % deficit
+                        // (README, 2026-10-10, "the law is not the outlier, the layer is").
+                        if(mc_ed_area){
+                          if(precip_i > 0.0 && sigma_p > 0.0){
+                            const double P_s  = precip_i / sigma_p;
+                            m.e_d.x[i][j][k] = sigma_p * a_ev * (1.0 + b_ev * pow(P_s, 1.0/6.0))
+                                * (q_sat - m.q_v_d.x[i][j][k]) * pow(P_s, 4.0/9.0);
+                          }else{
+                            m.e_d.x[i][j][k] = 0.0;
+                          }
+                        }else
                         if(precip_i > 0.0){
                           double P_16 = pow(precip_i, 1.0/6.0);
                           double P_49 = pow(precip_i, 4.0/9.0);
@@ -2050,8 +2073,8 @@ void findCloudBaseLFS() {
         if(n2 > 0)
             printf("      AGCM: [MC-GP] step base+1 -> base+2 in %ld columns: detrained ENVIRONMENT cloud >= the condensate the"
                    " updraft carries in %ld;  mean step*D_u/M_u %.3f,  mean env cloud %.4f g/kg,  mean q_c_u %.4f g/kg,"
-                   "  mean detrained/carried %.2f   (ATM_MC_QC_DETRAIN = %d, ATM_MC_EVAP_LIMIT = %d, ATM_MC_QVD = %d)\n",
-                   n2, n_neg, sr / n2, 1e3 * sc / n2, 1e3 * sq / n2, sratio / n2, (int)qc_detrain, (int)mc_evap_limit, mcQvd());
+                   "  mean detrained/carried %.2f   (ATM_MC_QC_DETRAIN = %d, ATM_MC_EVAP_LIMIT = %d, ATM_MC_QVD = %d, ATM_MC_ED_AREA = %d)\n",
+                   n2, n_neg, sr / n2, 1e3 * sc / n2, 1e3 * sq / n2, sratio / n2, (int)qc_detrain, (int)mc_evap_limit, mcQvd(), (int)mc_ed_area);
     }
 
     static bool mcDiag(){
