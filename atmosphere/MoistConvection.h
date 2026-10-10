@@ -1026,6 +1026,29 @@ void findCloudBaseLFS() {
 *
 */
 // ==================== DOWNDRAFT ENTRAINMENT ====================
+    // ATM_MC_QVD=<0|1|2>, default 0 = unchanged. Ported 2026-10-10 from ATOM_Precipitation
+    // `6b49292` (2026-09-25, default 0 there too).
+    //
+    // The downdraft humidity that e_d and e_p evaluate against is set to
+    // 0.5*(cloud + 0.98*q_sat): half the CLOUD-WATER array plus half saturation. The shape is
+    // Tiedtke's LFS mix of equal parts cloud air (saturated) and ENVIRONMENT air, whose humidity
+    // is the vapour c, not cloud water. =1 uses 0.5*(c + 0.98*q_sat); =2 a saturated downdraft,
+    // 0.98*q_sat (Tiedtke 1989).
+    //
+    // Why it is here: with ATM_MC_QC_DETRAIN and ATM_MC_EVAP_LIMIT on, this tree's convection
+    // forms 5.2e6 mm/a of rain and the downdraft evaporation e_d takes 100 % of it. The
+    // evaporative deficit q_sat - q_v_d is what e_d and e_p are proportional to; the README
+    // section of 2026-10-10 has what the two modes do to it.
+    static int mcQvd() { static const int v = [](){ const char* e = std::getenv("ATM_MC_QVD");
+                                                   return e ? std::atoi(e) : 0; }(); return v; }
+    double qvDown(int i, int j, int k, double q_sat) const {
+        switch (mcQvd()) {
+            case 1:  return 0.5 * (m.c.x[i][j][k] + AtomMoistConvection::scale * q_sat);
+            case 2:  return AtomMoistConvection::scale * q_sat;
+            default: return 0.5 * (cloud.x[i][j][k] + AtomMoistConvection::scale * q_sat);
+        }
+    }
+
     void downdraftEntrainment(int iter_prec) {
         using namespace AtomMoistConvection;
 
@@ -1051,7 +1074,7 @@ void findCloudBaseLFS() {
                 double E_sat = SaturationH2O::saturationPressureAuto(t_u);
                 double q_sat = safe_q_sat(E_sat, p_u, m.c.x[i_lfs][j][k]);
 
-                m.q_v_d.x[i_lfs][j][k] = 0.5 * (cloud.x[i_lfs][j][k] + scale * q_sat);
+                m.q_v_d.x[i_lfs][j][k] = qvDown(i_lfs, j, k, q_sat);
 
                 // ATHAD: local mixture gas constant, not R_Air with a virtual-temperature
                 // expansion that assumes water is a trace. Matches ThermoAtm::densities().
@@ -1092,7 +1115,7 @@ void findCloudBaseLFS() {
                     double E_sat = SaturationH2O::saturationPressureAuto(t_u);
                     double q_sat = safe_q_sat(E_sat, p_u, m.c.x[i][j][k]);
 
-                    m.q_v_d.x[i][j][k] = 0.5 * (cloud.x[i][j][k] + scale * q_sat);
+                    m.q_v_d.x[i][j][k] = qvDown(i, j, k, q_sat);
 
                     m.E_d.x[i][j][k] = eps_d * fabs(m.M_d.x[i][j][k]);
                     m.D_d.x[i][j][k] = del_d * fabs(m.M_d.x[i][j][k]);
@@ -2027,8 +2050,8 @@ void findCloudBaseLFS() {
         if(n2 > 0)
             printf("      AGCM: [MC-GP] step base+1 -> base+2 in %ld columns: detrained ENVIRONMENT cloud >= the condensate the"
                    " updraft carries in %ld;  mean step*D_u/M_u %.3f,  mean env cloud %.4f g/kg,  mean q_c_u %.4f g/kg,"
-                   "  mean detrained/carried %.2f   (ATM_MC_QC_DETRAIN = %d, ATM_MC_EVAP_LIMIT = %d)\n",
-                   n2, n_neg, sr / n2, 1e3 * sc / n2, 1e3 * sq / n2, sratio / n2, (int)qc_detrain, (int)mc_evap_limit);
+                   "  mean detrained/carried %.2f   (ATM_MC_QC_DETRAIN = %d, ATM_MC_EVAP_LIMIT = %d, ATM_MC_QVD = %d)\n",
+                   n2, n_neg, sr / n2, 1e3 * sc / n2, 1e3 * sq / n2, sratio / n2, (int)qc_detrain, (int)mc_evap_limit, mcQvd());
     }
 
     static bool mcDiag(){

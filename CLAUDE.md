@@ -364,9 +364,15 @@ should be re-examined.
   all cooling. **`ATM_MC_EVAP_LIMIT=1`** (upstream `e8d06ce`, the default there) charges
   `e_d + e_p` against the rain that exists: alone a byte-identical null, with `QC_DETRAIN` it
   takes the unmet demand and the `MC_t` truncation to zero. **With both, the downdraft still
-  re-evaporates 100 % of the generation and nothing reaches the ground** — the next candidate is
-  upstream's `ATM_MC_QVD` (the downdraft humidity is built from the cloud-WATER array), not
-  ported. 20 iterations only; the flip of either default is the user's call.
+  re-evaporates 100 % of the generation and nothing reaches the ground.**
+  **`ATM_MC_QVD`** (upstream `6b49292`; the downdraft humidity was built from the cloud-WATER
+  array; 1 = environment vapour, 2 = saturated downdraft; default 0) **was the predicted cure and
+  is not one**: it cuts the unbacked demand from ~11 000x the generation to 235x (mode 1) or
+  467x (mode 2), and `e_d` still takes 100 %. Its one visible effect under the limit is `MC_q`
+  off its cap (1.108 % -> 0). **What remains is the evaporation law `e_d` itself** (`a_ev`,
+  `b_ev`, charged on a 60 bar layer mass against a `q_sat` of hundreds of g/kg) — a reading, not
+  a diagnosis; upstream's `ATM_MC_ED_AREA` / `ATM_MC_ED_ABOVE_BASE` are unported. 20 iterations
+  only; the flip of any of the three defaults is the user's call.
 - **Field names changed 2026-08-20** (ported from ATHAD README item 61). The Brunt-Vaisala
   frequency squared is `brunt_N2` in the code and `BruntVaisala_N2` in the VTK files — it used to
   be `N2`, in the same file as nitrogen's `q_N2`. The eight species are written under bare names

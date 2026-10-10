@@ -153,6 +153,7 @@ Four arms, 20 iterations from scratch, 8 threads, all three instruments on, fina
   **100 % of the generation**, now within what exists. So the two knobs together turn "no rain
   is formed" into "all rain formed is re-evaporated by the downdraft", and the large-scale state
   barely notices (precipitation average 199 163.86 → 199 163.91 mm/a, max T in the 8th digit).
+  **(Tested the same day, next subsection: it is NOT enough.)**
   Upstream met the same wall — "`e_d` takes 100 % of it" — and its repair is `ATM_MC_QVD`
   (`6b49292`): the downdraft humidity is built as `0.5*(cloud + 0.98*q_sat)`, **half of the
   cloud-WATER array**, where Tiedtke's mix is environment VAPOUR. That line is here unchanged
@@ -168,6 +169,105 @@ the three instruments on, 20 of 20; `ATM_MC_EVAP_LIMIT=1` alone, 20 of 20; contr
 what happens to the water the parcel condenses (`c_u` debits the environment's vapour through
 `MC_q`) while its condensate is wiped — on the default branch that is a candidate water sink,
 and the column budget instrument upstream has for it (`ColumnWaterBudget.h`) is not ported.
+
+### `ATM_MC_QVD` (2026-10-10, default 0): it cuts the demand 24-47x and the downdraft still takes everything
+
+Ported from `ATOM_Precipitation` `6b49292` in upstream's form (`qvDown()`, two call sites in
+`downdraftEntrainment`): the downdraft humidity `e_d` and `e_p` evaluate against is
+`0.5*(cloud + 0.98*q_sat)` — half the cloud-WATER array — by default; `=1` uses the
+environment's vapour, `0.5*(c + 0.98*q_sat)`; `=2` a saturated downdraft, `0.98*q_sat`.
+
+**The prediction written above this section was that this is "the next candidate" for why no
+convective rain reaches the ground. It is not enough, in either mode.** 20 iterations from
+scratch, 8 threads, `ATM_MC_QC_DETRAIN=1 ATM_MC_EVAP_LIMIT=1`, final call
+(`python/run_el_qe`, `run_qv1`, `run_qv2`):
+
+| | `QVD=0` | `QVD=1` | `QVD=2` |
+|---|---|---|---|
+| generation `g_p`, mm/a | 5 203 328 | 5 218 599 | 5 218 565 |
+| share taken by `e_d` | 100 % | **100 %** | **100 %** |
+| convective rain at the ground, mm/a | 0 | **0** | **0** |
+| `MC_t` truncated, cells | 0 | 0 | 0 |
+| `MC_q` truncated, % of cells | 1.108 | **0** | **0** |
+| precipitation average (ice scheme), mm/a | 199 163.91 | 199 163.81 | 199 163.81 |
+| max T, °C | 238.881248 | 238.881255 | 238.881255 |
+
+**How far off it is, measured with the limit OFF** so that the raw demand shows (2 iterations,
+8 threads, `ATM_MC_QC_DETRAIN=1`; `run_el_q`, `run_qvraw1`, `run_qvraw2`; first and second
+call): the evaporative demand that no rain backs is
+
+    QVD=0   10 996x and 13 005x the generation     MC_t truncated in 54.8 % of cells
+    QVD=1      235x and    272x                                      34.7 %
+    QVD=2      467x and    553x                                      50.7 %
+
+So the cloud-water term was worth a factor of 24-47 in demand — it IS a large error here, as
+expected with 36 g/kg of cloud — **and a demand 235x the supply remains with it gone.** Mode 1
+demands half of what mode 2 does. The one thing it changes in the limited run is `MC_q`: the
+43 439 cells (1.108 %) that sat on that cap in every run today are off it in both modes.
+
+**What is left is the evaporation law itself, and that is a reading, not a diagnosis.**
+`e_d = a_ev*(1 + b_ev*P^(1/6))*(q_sat - q_v_d)*P^(4/9)` with `a_ev` = 1e-3 and `b_ev` = 5.9, and
+the demand it is charged as is `step*rho*e_d`. Two things in that product are not Earth's: the
+layer mass `step*rho` (60 bar, ~450 m layers) and `q_sat`, which is hundreds of g/kg in a
+388-500 K column, so even the 2 % deficit of a saturated downdraft is several g/kg. Whether
+the coefficients, the deficit or the downdraft's area weighting (upstream's `ATM_MC_ED_AREA`,
+`ATM_MC_ED_ABOVE_BASE`, both unported) is the one to move has NOT been looked at.
+
+**Byte check** (`python/run_qvd.sh`): the binary before any of today's changes against the new
+one with every knob unset, 20 of 20 files (2 iterations, 1 thread); controls `QVD=1` against
+`QVD=0` 2 of 20, `QVD=2` against `QVD=1` 2 of 20 (20 iterations, 8 threads).
+
+### The downdraft evaporation law, factor by factor: the law is not the outlier, the layer is (2026-10-10)
+
+A probe build (`[MC-ED]`, not kept in the source; logs `python/run_ed0`, `run_ed1`, `run_ed2`)
+re-evaluated the law on every level that carries convective rain, with
+`ATM_MC_QC_DETRAIN=1 ATM_MC_EVAP_LIMIT=1`, 2 iterations from scratch, 8 threads, second call.
+No code changed; this is a reading of what is there.
+
+**The law** is `e_d = a_ev*(1 + b_ev*P^(1/6))*(q_sat - q_v_d)*P^(4/9)`, `a_ev` = 1e-3, `b_ev` = 5.9:
+the Kessler rain-evaporation rate written on the precipitation flux, as in COSMO. It is a rate
+per kg of AIR, and `downdraftRecurrence` charges it as `step*rho*e_d` — to the whole grid layer.
+
+| mean over the ~590 000 levels with rain | `QVD=0` | `QVD=1` | `QVD=2` |
+|---|---|---|---|
+| layer mass `step*rho`, kg/m2 | 16 062 | 16 114 | 16 066 |
+| temperature / `q_sat` | 443.7 K / 235 g/kg | 442.8 K / 233 g/kg | 443.0 K / 234 g/kg |
+| deficit `q_sat - q_v_d`, g/kg | **103.5** | **2.20** | **4.68** |
+| rain available, kg/(m2 s) | 0.0161 | 0.0163 | 0.0163 |
+| law rate per unit deficit, 1/s | 5.30e-4 | 5.34e-4 | 5.36e-4 |
+| levels whose demand ≥ ALL the rain arriving | 100 % | 79.9 % | 100 % |
+| law demand at the rain actually there / generation | **53.2x** | **1.1x** | **2.4x** |
+| the same law AREA-WEIGHTED, `sigma*E(P/sigma)` / generation | 15.9x | **0.3x** | **0.7x** |
+| Tiedtke's bound, `sum |M_d|*0.98*dq_sat` / generation | 2.95x | 2.95x | 2.95x |
+
+(At the first call the `QVD=1` figures are 1.2x, 0.4x and 2.49x.)
+
+Three things, in the order they matter:
+
+1. **The deficit under the default is 44 % of `q_sat`** — 103.5 g/kg — because half of the
+   downdraft "humidity" is the cloud-water array. `ATM_MC_QVD` takes it to 2.2 or 4.7 g/kg, a
+   factor 22-47, which is the factor measured in the unlimited runs above. That part is done.
+2. **The layer is 16 000 kg/m2.** The law's rate is ordinary — 5.3e-4 /s per unit deficit at
+   58 mm/h of rain — but it is applied to every kilogram of a layer that holds 20-50x what an
+   Earth layer does (18.6 kg/m3 over ~1070 m; the ~450 m quoted earlier in this section is the
+   spacing near cloud base only), with the deficit held fixed while it evaporates. So even at
+   a 2 % deficit one level asks for all the rain arriving in 80 % of the levels. **The rain falls
+   in a shaft, not in the whole cell**: `e_p` already carries the precipitating area fraction
+   `sigma_p` (0.08 here), `e_d` does not. Weighted the same way — which is exactly upstream's
+   `ATM_MC_ED_AREA` (`c8f1489`), unported — the demand is **0.3x the generation with `QVD=1` and
+   0.7x with `QVD=2`**. That is the first combination today under which convective rain would
+   reach the ground; it is a number computed from the fields, NOT a run.
+3. **Independently of this law, a downdraft this strong would take the rain anyway.** Tiedtke's
+   own requirement — evaporate what keeps the descending air saturated — is `|M_d|*dq_sat` per
+   level: `|M_d|` = 3.4 kg/(m2 s) (`gam_d` = 0.3 of a cloud-base `M_u` of 11) against a `q_sat` that
+   rises 4.8 g/kg per level on the way down, **2.95x the generation**. So the scheme's rain
+   production is small against the water its own downdraft can absorb, whatever law is used.
+   That points at the mass-flux closure (`c_mb`, `gam_d`, both Earth / COSMO constants on a
+   60 bar column) and at how little of the updraft's water becomes rain (`g_p = K_p*q_c_u` with
+   `q_c_u` capped at 10 g/kg), and none of that has been examined.
+
+**So: the coefficients `a_ev`, `b_ev` are not the thing to move.** The cheap next step is
+`ATM_MC_ED_AREA` with `ATM_MC_QVD=1`; the larger question behind it is point 3.
 
 ## The background opacity, split per species — a no-op that stopped being one
 
