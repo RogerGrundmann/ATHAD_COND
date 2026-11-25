@@ -2,6 +2,20 @@
 
 **The Hadean atmosphere after condensation.**
 
+<p align="center"><img src="https://raw.githubusercontent.com/RogerGrundmann/ATHAD_COND/ATHAD_COND/doc/ATHAD_COND_globe.jpeg" width="520" alt="ATHAD_COND: the surface on the globe"></p>
+
+<p align="center"><sub>Precipitation (mm/day) at the surface of the CO₂ atmosphere over the hot sea, 520–778 mm/day in bands; white: surface-wind stream lines; north pole at the top. Arm <code>run_long_tied</code> (Tiedtke convection) at iteration 400, drawn from the level-0 radial slice with <code>literature/hadean_globe.py</code> (outside the repo).</sub></p>
+
+**The Hadean family.** Three successive epochs of the early Earth, one model each, forked from one another with their full history so fixes cherry-pick in both directions:
+
+| Model | Epoch | Atmosphere | Surface |
+|---|---|---|---|
+| [ATHAD](https://github.com/RogerGrundmann/ATHAD) | ~4.4 Ga, over the magma ocean | steam (H₂O-dominated), ~250 bar | molten or quenching rock, no topography |
+| **ATHAD_COND** (this repo) | after the steam rained out | CO₂-dominated, 27–100 bar | liquid sea at 230–250 °C |
+| [ATHAD_PERID](https://github.com/RogerGrundmann/ATHAD_PERID) | after a peridotitic magma ocean solidified | CO₂-dominated, 5–20 bar | ocean at 20–150 °C |
+
+**Sister family:** the same ATOM numerics run the giant planets -- [ATJUP](https://github.com/RogerGrundmann/ATJUP), [ATSAT](https://github.com/RogerGrundmann/ATSAT), [ATURAN](https://github.com/RogerGrundmann/ATURAN), [ATNEPT](https://github.com/RogerGrundmann/ATNEPT).
+
 An atmospheric general-circulation model of the epoch that follows
 [ATHAD](https://github.com/RogerGrundmann/ATHAD): the magma ocean has quenched, the steam
 atmosphere has rained out into a liquid ocean, and what remains above it is a
@@ -18,16 +32,6 @@ cherry-pick in both directions. ATHAD in turn is the atmosphere half of
 ground to ~177 km and *nothing condenses*; here water is subcritical everywhere and
 condensation is live from the sea surface up, so the code paths ATHAD spent seventeen
 defect-fixes making inert are the ones this model depends on.
-
-**The Hadean family.** Three successive epochs of the early Earth, one model each, forked from one another with their full history so fixes cherry-pick in both directions:
-
-| Model | Epoch | Atmosphere | Surface |
-|---|---|---|---|
-| [ATHAD](https://github.com/RogerGrundmann/ATHAD) | ~4.4 Ga, over the magma ocean | steam (H₂O-dominated), ~250 bar | molten or quenching rock, no topography |
-| **ATHAD_COND** (this repo) | after the steam rained out | CO₂-dominated, 27–100 bar | liquid sea at 230–250 °C |
-| [ATHAD_PERID](https://github.com/RogerGrundmann/ATHAD_PERID) | after a peridotitic magma ocean solidified | CO₂-dominated, 5–20 bar | ocean at 20–150 °C |
-
-**Sister family:** the same ATOM numerics run the giant planets -- [ATJUP](https://github.com/RogerGrundmann/ATJUP), [ATSAT](https://github.com/RogerGrundmann/ATSAT), [ATURAN](https://github.com/RogerGrundmann/ATURAN), [ATNEPT](https://github.com/RogerGrundmann/ATNEPT).
 
 ## The convection scheme is a moist convective adjustment since 2026-10-10 — the Tiedtke scheme is no longer called
 
