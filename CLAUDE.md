@@ -553,7 +553,13 @@ adjustment acts in every column (max 2 sweeps, max dT ~1.3 K, enthalpy drift ~1e
 the free top does over a real run (ATHAD's items 45-46, 65-67 and 79 are the record of what happened there).
 
 
-## `ATM_IM` -- the number of radial levels is a build option (2026-11-26, default 61)
+## `ATM_IM` -- the number of radial levels is a build option (2026-11-26), DEFAULT 41 (was 61)
+
+**Default 41 since 2026-11-26** (user: "make im=41 the default for COND and PERID"), as in ATHAD; `make clean && make
+cond IM=61` restores the grid of every result before that date. Byte checks (`python/run_imdefault.sh`, 2 it, 1 thread):
+the default build = the IM=41 test binary, and IM=61 = the 61-level binary before, 13/13 files each. With the legacy
+height grid (no `ATM_GRID_PRESSURE`) im 41 gives ~490 m bottom layers, so `drag_n_layers` 5 reaches ~2.9 km instead
+of ~1.8 km; the pressure-grid settings below keep it near 1.8 km. `survival.py` / `psicheck.py` default to `ATM_IM` 41.
 
 User: "is it finally possible to have im=41 in COND and PERID like in ATHAD", then "add the im option". `static const
 int im = ATM_IM` in `cAtmosphereModel.h` (default 61, `static_assert` 5..81 = `lib/Array.cpp` MAXI); `make clean &&

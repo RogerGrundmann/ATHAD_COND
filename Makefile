@@ -20,7 +20,7 @@ atmosphere/Results_Atm.o
 
 XML_OBJ = tinyxml2/tinyxml2.o
 
-# IM=<n>: number of radial levels (ATM_IM, default 61 in atmosphere/cAtmosphereModel.h). Objects built
+# IM=<n>: number of radial levels (ATM_IM, default 41 since 2026-11-26, in atmosphere/cAtmosphereModel.h; IM=61 = before). Objects built
 # for one im must not be linked with another, so run `make clean` before switching: make clean && make cond IM=41
 ifdef IM
 CFLAGS += -DATM_IM=$(IM)

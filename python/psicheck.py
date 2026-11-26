@@ -12,8 +12,8 @@ usage: psicheck.py <label>=<vtk> [...]
 """
 import re, sys, os
 
-# ATHAD_COND grid: im = 61 (ATHAD is 41). ATM_IM overrides for an off-default grid.
-IM = int(os.environ.get("ATM_IM", 61))
+# ATHAD_COND grid: im = 41 since 2026-11-26 (61 before, as ATHAD's 41). ATM_IM overrides for an off-default grid.
+IM = int(os.environ.get("ATM_IM", 41))
 JM = 181
 
 def load(fn, im=IM, jm=JM):

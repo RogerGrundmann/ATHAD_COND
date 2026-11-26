@@ -178,12 +178,12 @@ public:
     // together, or reformulate the drag depth as a length first. ATHAD runs im = 41 for
     // wall clock (0ece6c7), not for physics, and its README item 39 later found the
     // photosphere reduced to a single grid cell there.
-    // ATM_IM (2026-11-26, user: "add the im option"): the number of radial levels is a BUILD option,
-    // `make clean && make cond IM=41` (Makefile), default 61 = the grid every result before this date
-    // was computed on. ATHAD runs 41. With ATM_GRID_PRESSURE pick ATM_GRID_BETA so the bottom layer stays
+    // ATM_IM (2026-11-26, user: "add the im option"): the number of radial levels is a BUILD option.
+    // DEFAULT 41 since 2026-11-26 (user: "make im=41 the default for COND and PERID"), as in ATHAD;
+    // `make clean && make cond IM=61` restores the grid every result before that date was computed on. With ATM_GRID_PRESSURE pick ATM_GRID_BETA so the bottom layer stays
     // ~300 m (drag_n_layers counts CELLS, see above); output and restarts of different im do not mix.
 #ifndef ATM_IM
-#define ATM_IM 61
+#define ATM_IM 41
 #endif
     static const int im = ATM_IM, jm = 181, km = 361;
     static_assert(ATM_IM >= 5 && ATM_IM <= 81, "ATM_IM must lie in 5..81 (lib/Array.cpp MAXI)");
