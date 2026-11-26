@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cAtmosphereModel.h"
+#include "ThermoAtm.h"     // ThermoAtm::prognosticT() for the lid pin under ATM_PROGNOSTIC_T
 #include "Utils.h"
 
 #include <iostream>
@@ -621,8 +622,13 @@ public:
                 // constant stratospheric top drifted upward within ~20 iters and
                 // corrupted the otherwise-steady initial state. Pinning holds it
                 // fixed; the upper field then only evolves around orography.
-                m.t.x[iml][j][k] = pin_t_top ? m.t_top_init[j][k]
-                                             : m.t.x[iml-1][j][k];
+                //
+                // ATM_PROGNOSTIC_T=1 (fix (a), 2026-11-26): the lid is pinned to t_skin, the grey radiative skin
+                // limit T_eff/2^(1/4) that the optically thin top tends to, instead of to the snapshot
+                // densities() refreshes: under the knob that snapshot is the free lid itself, which the radiation
+                // cooled ~4.7 K per call and nothing restored (204 K by iteration 50). Interior stays free.
+                m.t.x[iml][j][k] = ThermoAtm::prognosticT() ? m.t_skin / m.t_0
+                                 : (pin_t_top ? m.t_top_init[j][k] : m.t.x[iml-1][j][k]);
 
                 // radiation lid (i=im-1): LEFT ALONE. It used to be set to
                 // σ·(t·t_0)⁴ on the reasoning that "radiation.x = σ·(t·t_0)⁴", which

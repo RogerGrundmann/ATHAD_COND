@@ -549,8 +549,20 @@ prescribed.** `ThermoAtm::densities()` rebuilds `t` every iteration as `max(t_sk
 
 Checks 2026-11-26 (`python/run_progt_check.sh`): knob unset, 2 it, 1 thread = the binary before the port,
 every output file byte-identical; `ATM_PROGNOSTIC_T=1 ATM_CONV_ADJ_MOIST=1`, 4 it, 2 threads: exit 0, the
-adjustment acts in every column (max 2 sweeps, max dT ~1.3 K, enthalpy drift ~1e-14). Not yet measured: what
-the free top does over a real run (ATHAD's items 45-46, 65-67 and 79 are the record of what happened there).
+adjustment acts in every column (max 2 sweeps, max dT ~1.3 K, enthalpy drift ~1e-14). 
+
+FIRST LONG RUN 2026-11-26 (run_progt_long, killed at it 50) and two FIXES, both under the knob only (default
+byte-identical, `python/run_fix_check.sh` 13/13): the lid ran away cold (204 K at it 50, below the grey skin limit
+221 K). A per-stage trace showed why: `apply_radiative_heating()` (radiation_mode 2) changes `t` AFTER
+`storeIntermediateData3D()` copied it into `tn`, and the RK step builds the next `t` from `tn`, so every interior
+level lost its radiative change every iteration while the lid -- not in the RK loop (i = 1 .. im-2) -- kept it
+(-4.7 K per call) and `bcRadius` pinned it to `densities()`' snapshot of itself. (1) Under the knob the heated `t` is
+copied into `tn`, so radiation reaches the interior. (a) Under the knob `bcRadius` pins the lid to `t_skin`.
+Traced 6 it after the fixes: lid 221.079 K everywhere; the levels below now keep the radiation and COOL ~4 K per
+iteration below t_skin (i-1 203 -> 195 K, i-5 208 -> 203 K by it 6), which grey radiative equilibrium does not
+allow -- OPEN: suspects the explicit step against the radiative time scale aloft and the 7-40x excess clear-sky
+optical depth on the pressure grid (TauLayer vs kappa*q*dp/g*p/p_ref). ATHAD's items 45-46, 65-67 and 79 are
+the record of the free top there.
 
 
 ## `ATM_IM` -- the number of radial levels is a build option (2026-11-26), DEFAULT 41 (was 61)

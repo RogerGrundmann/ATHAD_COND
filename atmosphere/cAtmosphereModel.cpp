@@ -2361,6 +2361,19 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
             refresh_radiative_teq();                            // A: refresh MLR -> t_eq target
         else if (radiation_mode == 2) {
             apply_radiative_heating();                          // B: MLR direct heating on T
+            // ATM_PROGNOSTIC_T=1 (fix (1), 2026-11-26): the RK step builds the next t from tn, which
+            // storeIntermediateData3D() copied just BEFORE this heating, so every interior level lost the
+            // radiative change each iteration (traced: level im-2 back to ~221 K after every RK step) and only
+            // the lid, which the RK loop does not integrate, kept it. Carry the heated t into tn so the
+            // radiation reaches the interior. With the prescribed profile densities() overwrites t anyway, so
+            // this runs only under the knob and a run without it stays bit-identical.
+            if (ThermoAtm::prognosticT()) {
+                #pragma omp parallel for collapse(2) schedule(static)
+                for (int i = 0; i < im; i++)
+                    for (int j = 0; j < jm; j++)
+                        for (int k = 0; k < km; k++)
+                            tn.x[i][j][k] = t.x[i][j][k];
+            }
             // MLR has just rebuilt albedo.y from the current condensate, so this is the
             // point at which the model's own albedo is known. Relax t_skin toward the
             // energy-balance value it implies; densities() picks the new value up on the
