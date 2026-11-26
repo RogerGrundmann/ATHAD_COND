@@ -528,6 +528,30 @@ should be re-examined.
 - `time_start/end/step` remain because the time-slice loop is still structural, though only
   one slice ever runs.
 
+
+## `ATM_PROGNOSTIC_T` and `ATM_CONV_ADJ_MOIST` (ported from ATHAD 2026-11-26, default 0)
+
+User: "port ATM_PROGNOSTIC_T to ATHAD_PERID and COND", with the moist option. **Default: the temperature is
+prescribed.** `ThermoAtm::densities()` rebuilds `t` every iteration as `max(t_skin, adiabat from the surface)`
+(moist where saturated), so everything above the point where the adiabat reaches `t_skin` is pinned to
+`t_skin` = (F / 2 sigma)^(1/4) = 221 K (`updateSkinTemperature`, `ATM_SKIN_GREY` 1) and has no dynamics.
+
+- `ATM_PROGNOSTIC_T=1` -- in the TIME LOOP `densities(false, true)` keeps the temperature the dynamics,
+  radiation and microphysics computed (floored at 180 K, ATHAD's floor) and only re-integrates `p_stat`
+  hydrostatically on it. The initial calls (`densities(true)`, the one after `initCO2`) still build the
+  prescribed profile, so both modes START from the same state. `ThermoAtm::prognosticT()` reads the knob.
+- `atmosphere/ConvectiveAdjustment.h` -- ATHAD's Manabe-Strickler adjustment (whole unstable segments, local
+  cp, per-layer critical drop on the stretched grid, dp-weighted enthalpy conserved), copied from ATHAD's
+  working tree. It runs ONLY under `ATM_PROGNOSTIC_T=1`, immediately before `densities()`: with a free profile
+  it is the only thing holding the lapse rate stable. `ATM_CONV_ADJ_MOIST=1` takes the saturated lapse
+  (`SaturationH2O::moistLapse`) where the lower cell is saturated (c >= 0.99 q_sat), the dry one elsewhere.
+  Further knobs: `ATM_CONV_ADJ_LAPSE` (scale of the critical lapse, 1), `ATM_CONV_ADJ_PASSES` (sweep cap, 64).
+
+Checks 2026-11-26 (`python/run_progt_check.sh`): knob unset, 2 it, 1 thread = the binary before the port,
+every output file byte-identical; `ATM_PROGNOSTIC_T=1 ATM_CONV_ADJ_MOIST=1`, 4 it, 2 threads: exit 0, the
+adjustment acts in every column (max 2 sweeps, max dT ~1.3 K, enthalpy drift ~1e-14). Not yet measured: what
+the free top does over a real run (ATHAD's items 45-46, 65-67 and 79 are the record of what happened there).
+
 ---
 
 # Moved from README.md on 2026-11-26

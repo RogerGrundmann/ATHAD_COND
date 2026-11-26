@@ -22,6 +22,7 @@
 #include "TwoCatIceScheme.h"
 #include "ThreeCatIceScheme.h"
 #include "SaturationAdjustment.h"
+#include "ConvectiveAdjustment.h"
 #include "IceSchemeCommon.h"
 #include "VelocityInitializer.h"
 #include "PressureSolverAtm.h"
@@ -2094,7 +2095,17 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
             // has no CO2 source or sink, so any drift is transport error.
             ThermoAtm(*this).co2Column(iter_n % diagnosticStride() == 0);
             ThermoAtm(*this).waterBudget(iter_n % diagnosticStride() == 0, "post-moist");
-            ThermoAtm(*this).densities();
+            // ATM_PROGNOSTIC_T=1 (default 0, ported from ATHAD 2026-11-26): the temperature is no longer
+            // prescribed by densities(), so the convective adjustment (dry; ATM_CONV_ADJ_MOIST=1 saturated
+            // where saturated) restores the lapse rate first. Not called at all without the knob.
+            if (ThermoAtm::prognosticT()) {
+                static bool announced = false;
+                if (!announced) { announced = true;
+                    std::cout << "      AGCM: ATM_PROGNOSTIC_T = 1: temperature prognostic above the ground; "
+                                 "ConvectiveAdjustment holds the lapse rate" << std::endl; }
+                ConvectiveAdjustment(*this).run();
+            }
+            ThermoAtm(*this).densities(false, true);
             ThermoAtm(*this).forces();
             ThermoAtm(*this).standAtm_DewPoint_HumidRel();              // International Standard Atmosphere temperature profile, dew point temperature, relative humidity profile
             ThermoAtm(*this).waterVapourEvaporation();                  // correction of surface water vapour by evaporation

@@ -1481,7 +1481,23 @@ public:
     // set_water_profile: diagnose c in the same sweep as T and p. INITIALISATION ONLY —
     // during the time loop c is prognostic and this must stay false, or the transport is
     // overwritten by the profile every iteration.
-    void densities(bool set_water_profile = false)
+    // ATM_PROGNOSTIC_T (default 0; ported from ATHAD 2026-11-26, user: "port ATM_PROGNOSTIC_T to
+    // ATHAD_PERID and COND"). Default: densities() PRESCRIBES the temperature every iteration as
+    // max(t_skin, moist/dry adiabat from the surface), so the upper column is pinned to t_skin and has
+    // no dynamics of its own. =1: in the TIME LOOP densities() keeps the temperature the dynamics,
+    // radiation and microphysics computed (floored at 180 K) and only re-integrates the pressure
+    // hydrostatically on it; ConvectiveAdjustment.h (ATM_CONV_ADJ_MOIST=1 for the saturated lapse) is
+    // then the only thing holding the lapse rate stable, and it runs only under this knob. The two
+    // initial calls (densities(true) and the one after initCO2) still build the prescribed profile,
+    // so a prognostic run STARTS from the same state as a prescribed one.
+    static bool prognosticT()
+    {
+        static const bool v = [](){ const char* e = getenv("ATM_PROGNOSTIC_T");
+                                    return e ? (atof(e) != 0.0) : false; }();
+        return v;
+    }
+
+    void densities(bool set_water_profile = false, bool in_time_loop = false)
     {
         using namespace std;
         cout << "\n\n\n      PressureDensity" << endl;
@@ -1598,7 +1614,10 @@ public:
                         const double T_ad = T_prev - gamma * dz;
 
                         // Isothermal once the adiabat drops below the radiative skin value.
-                        T_i = std::max(m.t_skin, T_ad);
+                        // ATM_PROGNOSTIC_T=1 (see prognosticT()): keep the computed temperature in the time loop.
+                        T_i = (in_time_loop && prognosticT())
+                            ? std::max(180.0, m.t.x[i][j][k] * m.t_0)
+                            : std::max(m.t_skin, T_ad);
 
                         // Hydrostatic, integrated on the layer-mean temperature.
                         const double T_mean = 0.5 * (T_prev + T_i);
