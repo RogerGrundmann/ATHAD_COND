@@ -609,6 +609,19 @@ Every panorama write (`paraview_panorama_vts_flag`, `panorama_print`) now also w
 repo-default config with every writer at 2, HEAD against the change: 15 / 15 existing output files identical in
 ATHAD, ATHAD_COND and ATHAD_PERID, both new files open and contour in VTK.
 
+## `ATM_SFC_DIAG=<n>` -- surface energy balance terms (2026-11-27, from ATHAD_PERID 5a209c0), print-only, default 0 = off
+
+`MultiLayerRadiation.h`. Every n-th call of the radiation, one `[sfc]` line per row at k = 0 for 90 N, 60 N,
+30 N and the equator: T_s0 and the T_s the balance sets (the change per call), T_air1 as it entered (the
+`densities()` adiabat + the RK step: `ad`) and as the radiative equilibrium makes it (`re`), SW_abs, the
+geothermal flux, the down-welling long-wave from both air profiles, sigma T_s0^4, the bulk turbulent term
+15 (T_s0 - T_air1) for both, and net = SW + geo + Ldown - sigma T_s0^4 - H for both (`re` = what the balance
+uses). Reads only. Byte check 2 it, 1 thread, every writer at 2: 17 / 17 output files identical unset and =1.
+First reading on this model (iteration 1, default config): net -19 W/m2 at the pole, +64 / +109 / +125 at
+60 N / 30 N / equator, -0.43 .. +2.74 K per call before the omega_rad = 0.05 blend.
+On ATHAD_PERID it traced the run_1000 cooling of the ground to the moist block's radial `damp_wiggles(t)` at the
+ground row (T0 += (T1 - T0)/4 per moist step); fix under test: `ATM_T_DAMP_GROUND` (uncommitted).
+
 # Moved from README.md on 2026-11-26
 
 The sections below were the technical part of README.md and were moved here verbatim (user: "CLAUDE.md everywhere"); the README keeps each heading with a one-sentence summary.

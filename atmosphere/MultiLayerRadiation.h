@@ -65,6 +65,23 @@ public:
         const int j_max  = m.jm - 1;
         const int j_half = j_max / 2;
 
+        // ATM_SFC_DIAG=<n> (print-only, default 0 = off; 2026-11-27, user: "add the surface-term
+        // print and confirm it"). Every n-th call of this routine: the terms of the surface energy
+        // balance below at k = 0 on four rows (90 N, 60 N, 30 N, equator), the net they give at the
+        // linearisation point T_s0, and the same net with the air the model actually KEEPS — the
+        // adiabat densities() hung from T_s0, plus the RK step, as it entered this routine — instead of the
+        // radiative-equilibrium air this routine computes and densities() then overwrites (with
+        // ATM_PROGNOSTIC_T=0). Question it answers: why the 12-bar ATHAD_PERID ground cools by a
+        // fixed amount per call. Reads only; the state is untouched.
+        static const int sfc_diag_n = [](){ const char* e = getenv("ATM_SFC_DIAG");
+                                            return e ? std::max(0, atoi(e)) : 0; }();
+        static long sfc_calls = 0;
+        const bool sfc_diag_on = sfc_diag_n > 0 && (sfc_calls++ % sfc_diag_n == 0);
+        const int sfc_rows[4] = { 0, j_half / 3, (2 * j_half) / 3, j_half };
+        struct SfcRec { double Ts0, Ts, Ta_ad, Ta_re, SW, geo, Ld_re, Ld_ad, sT4, H_re, H_ad,
+                        net_re, net_ad; bool set = false; };
+        SfcRec sfc_rec[4];
+
         // ---- latitude profiles (computed once; read-only in the parallel loop) ----
 
         // Surface albedo with a temperature-dependent ICE/SNOW FEEDBACK (replaces the former
@@ -121,7 +138,11 @@ public:
             //   dn[i]  downward long-wave flux leaving the BOTTOM of layer i  [W/m2]
             //   T[i]   layer temperature [K], updated in place by the sweeps
             std::vector<double> up(m.im, 0.0), dn(m.im + 1, 0.0), T(m.im, 0.0),
-                                Gf(m.im, 0.0);   // dB/dF for the direct solve
+                                Gf(m.im, 0.0),   // dB/dF for the direct solve
+                                T_in, dn_ad;     // ATM_SFC_DIAG only: entering T, its down sweep
+            int sfc_slot = -1;                   // ATM_SFC_DIAG: which of sfc_rows this j is
+            if (sfc_diag_on)
+                for (int s = 0; s < 4; s++) if (sfc_rows[s] == j) sfc_slot = s;
 
             const int i_trop  = m.im - 1;   // top layer
             const int i_mount = 0;          // surface / bottom layer
@@ -130,6 +151,7 @@ public:
 
                 for (int i = i_mount; i <= i_trop; i++)
                     T[i] = m.t.x[i][j][k] * m.t_0;
+                if (sfc_slot >= 0 && k == 0) T_in = T;   // ATM_SFC_DIAG: the air as it entered
 
                 // ATHAD: layer optical depth from COLUMN MASS with pressure broadening.
                 //
@@ -480,6 +502,26 @@ public:
                                        + dsigT4 * T_s0 + c_H * T_air1) / (dsigT4 + c_H);
                 m.t.x[i_mount][j][k] = T_s / m.t_0;
 
+                // ATM_SFC_DIAG (print-only): record the balance; the adiabat's down-welling
+                // long-wave is the same sweep on the entering temperatures.
+                if (sfc_slot >= 0 && k == 0) {
+                    dn_ad.assign(m.im + 1, 0.0);
+                    for (int i = i_trop; i >= i_mount + 1; i--) {
+                        const double eps = m.epsilon.x[i][j][k];
+                        dn_ad[i] = dn_ad[i+1] * (1.0 - eps) + eps * m.sigma * pow(T_in[i], 4.0);
+                    }
+                    SfcRec& r = sfc_rec[sfc_slot];
+                    r.Ts0 = T_s0;  r.Ts = T_s;
+                    r.Ta_re = T_air1;  r.Ta_ad = T_in[i_mount + 1];
+                    r.SW = SW_abs;  r.geo = m.geothermal_flux;
+                    r.Ld_re = L_down;  r.Ld_ad = dn_ad[i_mount + 1];
+                    r.sT4 = m.sigma * pow(T_s0, 4.0);
+                    r.H_re = c_H * (T_s0 - r.Ta_re);  r.H_ad = c_H * (T_s0 - r.Ta_ad);
+                    r.net_re = r.SW + r.geo + r.Ld_re - r.sT4 - r.H_re;
+                    r.net_ad = r.SW + r.geo + r.Ld_ad - r.sT4 - r.H_ad;
+                    r.set = true;
+                }
+
                 // radiation.x is now the UPWARD LONG-WAVE FLUX at the top of each layer,
                 // not sigma*T^4 of that layer. It is a diagnostic field (nothing feeds it
                 // back into the dynamics), and as a flux it is the more useful one: it is
@@ -492,6 +534,22 @@ public:
 
             }  // k
         }  // j
+
+        if (sfc_diag_on) {
+            printf("      [sfc] call %ld, k = 0; W/m2, K. net = SW + geo + Ldown - sigma Ts0^4 - 15 (Ts0 - T_air1);"
+                   " _re = with the radiative-equilibrium air (what the balance uses), _ad = with the air as it"
+                   " entered (densities() adiabat + the RK step), which densities() keeps\n", sfc_calls - 1);
+            for (int s = 0; s < 4; s++) {
+                const SfcRec& r = sfc_rec[s];
+                if (!r.set) continue;
+                printf("      [sfc] lat %5.1f  Ts0 %7.2f -> %7.2f (%+6.3f)  T_air1 ad %7.2f re %7.2f"
+                       "  SW %6.1f geo %5.1f  Ldown re %6.1f ad %6.1f  sT4 %6.1f  H re %6.1f ad %6.1f"
+                       "  net re %+7.2f ad %+7.2f\n",
+                       90.0 - 180.0 * sfc_rows[s] / (double)j_max, r.Ts0, r.Ts, r.Ts - r.Ts0,
+                       r.Ta_ad, r.Ta_re, r.SW, r.geo, r.Ld_re, r.Ld_ad, r.sT4, r.H_re, r.H_ad,
+                       r.net_re, r.net_ad);
+            }
+        }
 
         auto end     = std::chrono::high_resolution_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
