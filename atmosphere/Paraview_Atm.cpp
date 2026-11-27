@@ -14,6 +14,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <vector>
+#include <algorithm>
+#include <cstdlib>
 
 #include "cAtmosphereModel.h"
 #include "Utils.h"
@@ -265,142 +268,213 @@ void cAtmosphereModel::paraview_panorama_vts(string &Name_Bathymetry_File, int n
 *
 */
 void cAtmosphereModel::paraview_sphere_vts(string &Name_Bathymetry_File, int n){
-
+    // Hadean_Atm_sphere_<n>.vts (2026-11-27, giants' GIANTS-SPHERE-VTS fix ported; written with the panorama,
+    // ATM_SPHERE=0 switches it off). Two changes against the writer that had been commented out:
+    //  - the pole rows j = 0 and j = jm-1 are NOT written: there sin(the) = 0, all km longitudes are one point,
+    //    and ParaView's Contour cannot invert the collapsed cells ("Cannot compute gradient of grid"). The
+    //    sphere spans 1..179 deg (extent j = 2..jm-1); the pole values stay in the panorama .vts.
+    //  - the Cartesian velocity is built in locals. The old writer stored it in aux_u / aux_v / aux_w, which the
+    //    model uses as work arrays, so a write could have changed the run.
     using namespace ParaViewAtm;
-
-    string Atmosphere_panorama_vts_File_Name = output_path + "/" + Name_Bathymetry_File + "_Atm_sphere_" + std::to_string(n) + ".vts";
-
-    ofstream Atmosphere_panorama_vts_File;
-
-    Atmosphere_panorama_vts_File.precision(8);
-    Atmosphere_panorama_vts_File.setf(ios::fixed);
-
-    Atmosphere_panorama_vts_File.open(Atmosphere_panorama_vts_File_Name);
-
-    if(!Atmosphere_panorama_vts_File.is_open()){
+    const string fname = output_path + "/" + Name_Bathymetry_File + "_Atm_sphere_" + std::to_string(n) + ".vts";
+    ofstream f;
+    f.precision(8);
+    f.setf(ios::fixed);
+    f.open(fname);
+    if(!f.is_open()){
         cerr << "ERROR: could not open paraview_sphere_vts file " << __FILE__ << " at line " << __LINE__ << "\n";
         abort();
     }
-
+    const int j0 = 1, j1 = jm - 1;                                  // rows written: j0 .. j1-1
     ostringstream buf;
     buf.precision(8);
     buf.setf(ios::fixed);
-
     buf << "<?xml version=\"1.0\"?>\n\n"
         << "<VTKFile type=\"StructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n\n"
-        << " <StructuredGrid WholeExtent=\"" << 1 << " " << im << " " << 1 << " " << jm << " " << 1 << " " << km << "\">\n\n"
-        << "  <Piece Extent=\"" << 1 << " " << im << " " << 1 << " " << jm << " " << 1 << " " << km << "\">\n\n"
-        << "   <PointData Vectors=\"Velocity\" Scalars=\"Bathymetry Temperature PressureDyn Salinity\">\n\n"
-        << "    <DataArray type=\"Float32\" NumberOfComponents=\"3\" Name=\"Velocity\" format=\"ascii\">\n\n";
-
+        << " <StructuredGrid WholeExtent=\"" << 1 << " " << im << " " << j0 + 1 << " " << j1 << " " << 1 << " " << km << "\">\n\n"
+        << "  <Piece Extent=\"" << 1 << " " << im << " " << j0 + 1 << " " << j1 << " " << 1 << " " << km << "\">\n\n"
+        << "   <PointData Vectors=\"Velocity\" Scalars=\"Temperature\">\n\n"
+        << "    <DataArray type=\"Float32\" NumberOfComponents=\"3\" Name=\"Velocity\" format=\"ascii\">\n";
+    // Cartesian components (m/s) kept for the three scalar arrays below
+    const size_t npt = (size_t)im * (j1 - j0) * km;
+    std::vector<float> cx(npt), cy(npt), cz(npt);
+    size_t q = 0;
     for(int k = 0; k < km; k++){
-        double sinphi = sin(phi.z[k]);
-        double cosphi = cos(phi.z[k]);
-
-        for(int j = 0; j < jm; j++){
-            double sinthe = sin(the.z[j]);
-            double costhe = cos(the.z[j]);
-            double sinthe_cosphi = sinthe * cosphi;
-            double costhe_cosphi = costhe * cosphi;
-            double sinthe_sinphi = sinthe * sinphi;
-            double costhe_sinphi = costhe * sinphi;
-
-            for(int i = 0; i < im; i++){
-                double ui = u.x[i][j][k];
-                double vi = v.x[i][j][k];
-                double wi = w.x[i][j][k];
-
-                double au = sinthe_cosphi * ui + costhe_cosphi * vi - sinphi * wi;
-                double av = sinthe_sinphi * ui + costhe_sinphi * vi + cosphi * wi;
-                double aw = costhe * ui - sinthe * vi;
-
-                aux_u.x[i][j][k] = au;
-                aux_v.x[i][j][k] = av;
-                aux_w.x[i][j][k] = aw;
-
-                buf << au << " " << av << " " << aw << '\n';
+        const double sinphi = sin(phi.z[k]), cosphi = cos(phi.z[k]);
+        for(int j = j0; j < j1; j++){
+            const double sinthe = sin(the.z[j]), costhe = cos(the.z[j]);
+            for(int i = 0; i < im; i++, q++){
+                const double ui = u.x[i][j][k], vi = v.x[i][j][k], wi = w.x[i][j][k];
+                const double au = u_0 * (sinthe * cosphi * ui + costhe * cosphi * vi - sinphi * wi);
+                const double av = u_0 * (sinthe * sinphi * ui + costhe * sinphi * vi + cosphi * wi);
+                const double aw = u_0 * (costhe * ui - sinthe * vi);
+                cx[q] = (float)safe_val(au); cy[q] = (float)safe_val(av); cz[q] = (float)safe_val(aw);
+                buf << cx[q] << " " << cy[q] << " " << cz[q] << '\n';
             }
-            buf << "\n\n";
         }
-        buf << "\n\n";
     }
-
-    buf << "\n\n    </DataArray>\n\n";
-    Atmosphere_panorama_vts_File << buf.str();
+    buf << "    </DataArray>\n";
+    f << buf.str();
     buf.str("");
     buf.clear();
 
-
-    buf << "    <DataArray type=\"Float32\" Name=\"Temperature\" format=\"ascii\">\n\n";
-    for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
-            for(int i = 0; i < im; i++){
-                buf << safe_val(t.x[i][j][k] * t_0 - t_0) << '\n';
-            }
-            buf << "\n\n";
-        }
-        buf << "\n\n";
-    }
-    buf << "\n\n    </DataArray>\n\n";
-    Atmosphere_panorama_vts_File << buf.str();
-    buf.str("");
-    buf.clear();
-
-
-
-    dump_array("Bathymetry", h, 1.0, Atmosphere_panorama_vts_File);
-
-    dump_array("u-component", aux_u, u_0, Atmosphere_panorama_vts_File);
-    dump_array("v-component", aux_v, u_0, Atmosphere_panorama_vts_File);
-    dump_array("w-component", aux_w, u_0, Atmosphere_panorama_vts_File);
-
-    dump_array("PressureDynamic", p_dyn, p_0, Atmosphere_panorama_vts_File);
-
-    dump_array("WaterVapour", c, 1e3, Atmosphere_panorama_vts_File);
-    dump_array("CloudWater", cloud, 1e3, Atmosphere_panorama_vts_File);
-    dump_array("CloudIce", ice, 1e3, Atmosphere_panorama_vts_File);
-
-    dump_array("Precipitation", Precipitation, 8.64e4, Atmosphere_panorama_vts_File);
-    dump_array("PrecipitationRain", P_rain, 8.64e4, Atmosphere_panorama_vts_File);
-    dump_array("PrecipitationSnow", P_snow, 8.64e4, Atmosphere_panorama_vts_File);
-//    dump_array("PrecipitationGraupel", P_graupel, 8.64e4, Atmosphere_panorama_vts_File);
-
+    auto dump_ = [&](const char* name, Array& a, double mult, double offs){
+        f << "    <DataArray type=\"Float32\" Name=\"" << name << "\" format=\"ascii\">\n";
+        for(int k = 0; k < km; k++)
+            for(int j = j0; j < j1; j++)
+                for(int i = 0; i < im; i++)
+                    f << safe_val(a.x[i][j][k] * mult + offs) << '\n';
+        f << "    </DataArray>\n";
+    };
+    auto dump_v = [&](const char* name, const std::vector<float>& c){
+        f << "    <DataArray type=\"Float32\" Name=\"" << name << "\" format=\"ascii\">\n";
+        for(size_t p = 0; p < c.size(); p++) f << c[p] << '\n';
+        f << "    </DataArray>\n";
+    };
+    dump_("Temperature", t, t_0, -t_0);                             // deg C, as the panorama
+    dump_("Bathymetry", h, 1.0, 0.0);
+    dump_v("u-component", cx);                                      // Cartesian x, y, z in m/s
+    dump_v("v-component", cy);
+    dump_v("w-component", cz);
+    dump_("PressureDynamic", p_dyn, p_0, 0.0);
+    dump_("Pressure_bar", p_stat, 1.0e-3, 0.0);
+    dump_("WaterVapour", c, 1e3, 0.0);                              // g/kg
+    dump_("CloudWater", cloud, 1e3, 0.0);
+    dump_("CloudIce", ice, 1e3, 0.0);
+    dump_("CloudGraupel", gr, 1e3, 0.0);
+    dump_("Density", r_humid, 1.0, 0.0);                           // kg/m3
+    dump_("Precipitation", Precipitation, 8.64e4, 0.0);            // mm/d
+    dump_("PrecipitationRain", P_rain, 8.64e4, 0.0);
+    dump_("PrecipitationSnow", P_snow, 8.64e4, 0.0);
 
     buf << "   </PointData>\n\n"
         << "   <Points>\n\n"
-        << "    <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">\n\n";
-
+        << "    <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">\n";
     for(int k = 0; k < km; k++){
-        double sinphi_k = sin(phi.z[k]);
-        double cosphi_k = cos(phi.z[k]);
-
-        for(int j = 0; j < jm; j++){
-            double sinthe_j = sin(the.z[j]);
-            double costhe_j = cos(the.z[j]);
-
+        const double sinphi_k = sin(phi.z[k]), cosphi_k = cos(phi.z[k]);
+        for(int j = j0; j < j1; j++){
+            const double sinthe_j = sin(the.z[j]), costhe_j = cos(the.z[j]);
             for(int i = 0; i < im; i++){
-                double r = rad.z[i] + 11.0;
-                double r_sinthe = r * sinthe_j;
-
-                buf << r_sinthe * cosphi_k << " "
-                    << r_sinthe * sinphi_k << " "
-                    << r * costhe_j << '\n';
+                const double r = rad.z[i] + 11.0;                  // display radius, as before
+                buf << r * sinthe_j * cosphi_k << " " << r * sinthe_j * sinphi_k << " " << r * costhe_j << '\n';
             }
-            buf << "\n\n";
         }
-        buf << "\n\n";
     }
-
     buf << "    </DataArray>\n\n"
         << "   </Points>\n\n"
         << "  </Piece>\n\n"
         << " </StructuredGrid>\n\n"
         << "</VTKFile>\n\n";
-    Atmosphere_panorama_vts_File << buf.str();
-    Atmosphere_panorama_vts_File.close();
-
-    cout << "   File:  " << Atmosphere_panorama_vts_File_Name
-        << "  has been written\n";
+    f << buf.str();
+    f.close();
+    cout << "   File:  " << fname << "  has been written\n";
+}
+/*
+ * Hadean_Atm_cloudview_<n>.vtk (2026-11-27, ported from the giants' <Planet>_cloudview; written with the
+ * panorama, ATM_CLOUDVIEW=0 switches it off): what a camera above the planet would see of the clouds. Every
+ * radial layer i is a sheet holding the column mass ABOVE it, summed from the top down to and including i:
+ *
+ *     X_above(i, j, k) = sum_{i' = i .. im-2} q_X(i', j, k) * rho(i', j, k) * (z(i'+1) - z(i'))
+ *
+ * with q_X the mass fraction (kg/kg), rho = r_humid (kg/m3) and z = get_layer_height (m), so layer 0 is the
+ * whole column (the photo) and stepping i upward strips the deeper cloud away. Cells inside the topography
+ * (i < i_topography) count 0; the lid im-1 has no thickness and holds 0.
+ *   WaterVapour_above_kgm2    precipitable water above the layer, kg/m2
+ *   CloudWater_above_gm2 / CloudIce_above_gm2 / CloudGraupel_above_gm2   g/m2
+ *   Condensate_above_gm2      the sum of the three
+ * Grid: concentric spherical shells, r = 1 + ATM_CLOUDVIEW_SHELL (im-1-i)/(im-1) (default 0.05, a display
+ * exaggeration), layer 0 OUTERMOST, so the globe seen from outside is the photo; Extract Subset / Clip on the
+ * z index exposes the deeper layers. The pole rows are left out as on the sphere .vts.
+ * PhotoRGB (colour by PhotoRGB, untick "Map Scalars"): a recipe, not radiative transfer -- a dark sea
+ * (0.06, 0.12, 0.22) mixed toward white by the condensate column, b = its value scaled between the 2nd and 98th
+ * percentile of LAYER 0 over |lat| <= 80 deg, so the scale is the same on every layer of one file (not between
+ * files); the ice + graupel share tints it slightly blue-white.
+ */
+void cAtmosphereModel::paraview_cloudview(string &Name_Bathymetry_File, int n){
+    const string fname = output_path + "/" + Name_Bathymetry_File + "_Atm_cloudview_" + std::to_string(n) + ".vtk";
+    ofstream f;
+    f.precision(4);
+    f.setf(ios::fixed);
+    f.open(fname);
+    if(!f.is_open()){
+        cerr << "ERROR: could not open cloudview file " << __FILE__ << " at line " << __LINE__ << "\n";
+        abort();
+    }
+    static const double cv_shell = [](){ const char* e = getenv("ATM_CLOUDVIEW_SHELL"); return e ? atof(e) : 0.05; }();
+    const int j0 = 1, j1 = jm - 1;
+    auto keep_ = [&](size_t q){ const int j_ = (int)((q / km) % jm); return j_ >= j0 && j_ < j1; };
+    const size_t npt = (size_t)im * (j1 - j0) * km;
+    f << "# vtk DataFile Version 3.0\n";
+    f << "Cloudview_Data_Atmosphere_Circulation\n";
+    f << "ASCII\n";
+    f << "DATASET STRUCTURED_GRID\n";
+    f << "DIMENSIONS " << km << " " << (j1 - j0) << " " << im << "\n";
+    f << "POINTS " << npt << " float\n";
+    {
+        const std::streamsize prec_ = f.precision();
+        f.precision(6);                                             // 4 decimals would merge shells 0.05/(im-1) apart
+        for(int i = 0; i < im; i++)
+            for(int j = j0; j < j1; j++)
+                for(int k = 0; k < km; k++){
+                    const double r = 1.0 + cv_shell * (double)(im - 1 - i) / (double)(im - 1);
+                    f << r * sin(the.z[j]) * cos(phi.z[k]) << " " << r * sin(the.z[j]) * sin(phi.z[k])
+                      << " " << r * cos(the.z[j]) << "\n";
+                }
+        f.precision(prec_);
+    }
+    f << "POINT_DATA " << npt << "\n";
+    auto column = [&](Array& a, double unit){
+        std::vector<double> col((size_t)im * jm * km, 0.0);         // col[i][j][k], layer im-1 stays 0
+        for(int j = 0; j < jm; j++) for(int k = 0; k < km; k++){
+            double s = 0.0;
+            const int i_ground = i_topography[j][k];
+            for(int i = im - 2; i >= 0; i--){
+                if(i >= i_ground){
+                    const double dz = (double)get_layer_height(i + 1) - (double)get_layer_height(i);
+                    // safe_val: -ffast-math turns std::isfinite into constant true (see the top of this file)
+                    const double v_ = ParaViewAtm::safe_val(a.x[i][j][k] * r_humid.x[i][j][k] * dz * unit);
+                    if(v_ > 0.0) s += v_;
+                }
+                col[((size_t)i * jm + j) * km + k] = s;
+            }
+        }
+        return col;
+    };
+    auto write_ = [&](const char* desc, const std::vector<double>& col){
+        f << "SCALARS " << desc << " float 1\n";
+        f << "LOOKUP_TABLE default\n";
+        for(size_t q = 0; q < col.size(); q++) if(keep_(q)) f << col[q] << "\n";
+    };
+    const std::vector<double> c_vap = column(c, 1.0);               // kg/m2
+    const std::vector<double> c_liq = column(cloud, 1.0e3);         // g/m2
+    const std::vector<double> c_ice = column(ice, 1.0e3);
+    const std::vector<double> c_gr  = column(gr, 1.0e3);
+    std::vector<double> c_all(c_liq.size());
+    for(size_t q = 0; q < c_all.size(); q++) c_all[q] = c_liq[q] + c_ice[q] + c_gr[q];
+    write_("WaterVapour_above_kgm2", c_vap);
+    write_("CloudWater_above_gm2", c_liq);
+    write_("CloudIce_above_gm2", c_ice);
+    write_("CloudGraupel_above_gm2", c_gr);
+    write_("Condensate_above_gm2", c_all);
+    {
+        std::vector<double> v_;
+        for(int j = 10; j < jm - 10; j++) for(int k = 0; k < km - 1; k++) v_.push_back(c_all[(size_t)j * km + k]);
+        std::sort(v_.begin(), v_.end());
+        const double lo = v_[v_.size() * 2 / 100], hi0 = v_[v_.size() * 98 / 100];
+        const double hi = hi0 > lo ? hi0 : lo + 1.0;
+        f << "COLOR_SCALARS PhotoRGB 3\n";
+        for(size_t q = 0; q < c_all.size(); q++){
+            if(!keep_(q)) continue;
+            const double b = std::min(1.0, std::max(0.0, (c_all[q] - lo) / (hi - lo)));
+            const double fi = c_all[q] > 0.0 ? (c_ice[q] + c_gr[q]) / c_all[q] : 0.0;
+            const double sea[3] = { 0.06, 0.12, 0.22 };
+            const double cl[3]  = { 1.0 - 0.08 * fi, 1.0 - 0.04 * fi, 1.0 };
+            f << sea[0] + b * (cl[0] - sea[0]) << " " << sea[1] + b * (cl[1] - sea[1]) << " "
+              << sea[2] + b * (cl[2] - sea[2]) << "\n";
+        }
+    }
+    f.close();
+    cout << "   File:  " << fname << "  has been written\n";
 }
 /*
  * 

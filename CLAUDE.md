@@ -586,6 +586,29 @@ OLR 159.1 vs 169.3 W/m2 (-6 %), photosphere 66.0 vs 67.4 km (265 vs 256 K), div 
 
 ---
 
+## Sphere `.vts` and cloudview, written with the panorama (2026-11-27), `ATM_SPHERE` / `ATM_CLOUDVIEW` default 1
+
+Every panorama write (`paraview_panorama_vts_flag`, `panorama_print`) now also writes, in `Paraview_Atm.cpp`:
+
+- `Hadean_Atm_sphere_<n>.vts`: the old `paraview_sphere_vts`, whose call had been commented out, with the giants'
+  GIANTS-SPHERE-VTS fix ported: the pole rows j = 0 / jm-1 are left out (extent j = 2..jm-1, 1..179 deg;
+  `sin(the) = 0` collapses every longitude and ParaView's Contour stopped with "Cannot compute gradient of grid"),
+  and the Cartesian velocity (m/s) is built in locals instead of `aux_u / aux_v / aux_w`, which the model uses as
+  work arrays. Fields: Velocity, Temperature (deg C), Bathymetry, u/v/w-component, PressureDynamic, Pressure_bar,
+  WaterVapour / CloudWater / CloudIce / CloudGraupel (g/kg), Density (`r_humid`, kg/m3), Precipitation / Rain /
+  Snow (mm/d). Display radius `rad.z + 11` as before. ~0.64 GB per write at im 41.
+- `Hadean_Atm_cloudview_<n>.vtk` (ported from the giants' `<Planet>_cloudview`): each radial layer i holds the
+  column mass ABOVE it, `sum_{i'=i..im-2} q * r_humid * (z(i'+1) - z(i'))` with z = `get_layer_height`, cells
+  inside the topography counted 0: `WaterVapour_above_kgm2`, `CloudWater / CloudIce / CloudGraupel /
+  Condensate_above_gm2`, and `PhotoRGB` (colour by it, untick "Map Scalars"): a recipe, not radiative transfer --
+  a dark sea mixed toward white by the condensate column scaled between its 2nd and 98th percentile of layer 0
+  over |lat| <= 80 deg (per file, so two files are not on one scale). Concentric shells, layer 0 outermost,
+  r = 1 + `ATM_CLOUDVIEW_SHELL` (im-1-i)/(im-1), default 0.05; pole rows left out. ~0.24 GB per write.
+
+`ATM_SPHERE=0` / `ATM_CLOUDVIEW=0` switch either off. Both only read the model state: byte check 2 it, 1 thread,
+repo-default config with every writer at 2, HEAD against the change: 15 / 15 existing output files identical in
+ATHAD, ATHAD_COND and ATHAD_PERID, both new files open and contour in VTK.
+
 # Moved from README.md on 2026-11-26
 
 The sections below were the technical part of README.md and were moved here verbatim (user: "CLAUDE.md everywhere"); the README keeps each heading with a one-sentence summary.

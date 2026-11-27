@@ -769,6 +769,7 @@ private:
     void print_loop_3D_headings();
     void paraview_panorama_vts(string &Name_Bathymetry_File, int n);
     void paraview_sphere_vts(string &Name_Bathymetry_File, int n);
+    void paraview_cloudview(string &Name_Bathymetry_File, int n);      // Hadean_Atm_cloudview_<n>.vtk, with the panorama (ATM_CLOUDVIEW=0 off)
     void paraview_vtk_radial(string &Name_Bathymetry_File, int i_radial, int n);
     void paraview_vtk_zonal(string &Name_Bathymetry_File, int k_zonal, int n);
     void paraview_vtk_longal(string &Name_Bathymetry_File, int j_longal, int n); 

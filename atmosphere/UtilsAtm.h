@@ -352,7 +352,12 @@ public:
         if (m.paraview_panorama_vts_flag && m.panorama_print > 0
             && m.iter_n > 0 && m.iter_n % m.panorama_print == 0) {
             m.paraview_panorama_vts(bathymetry_name, m.iter_n);
-//            m.paraview_sphere_vts(bathymetry_name, m.iter_n);
+            // Sphere .vts and cloudview ride with the panorama (2026-11-27; ATM_SPHERE=0 / ATM_CLOUDVIEW=0 switch
+            // either off). Both only read the model state.
+            static const bool sphere_on = [](){ const char* e = getenv("ATM_SPHERE"); return e ? atoi(e) != 0 : true; }();
+            static const bool cloudv_on = [](){ const char* e = getenv("ATM_CLOUDVIEW"); return e ? atoi(e) != 0 : true; }();
+            if (sphere_on) m.paraview_sphere_vts(bathymetry_name, m.iter_n);
+            if (cloudv_on) m.paraview_cloudview(bathymetry_name, m.iter_n);
         }
 
         m.AtmosphereDataTransfer(bathymetry_name);
