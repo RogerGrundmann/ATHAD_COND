@@ -620,7 +620,40 @@ uses). Reads only. Byte check 2 it, 1 thread, every writer at 2: 17 / 17 output 
 First reading on this model (iteration 1, default config): net -19 W/m2 at the pole, +64 / +109 / +125 at
 60 N / 30 N / equator, -0.43 .. +2.74 K per call before the omega_rad = 0.05 blend.
 On ATHAD_PERID it traced the run_1000 cooling of the ground to the moist block's radial `damp_wiggles(t)` at the
-ground row (T0 += (T1 - T0)/4 per moist step); fix under test: `ATM_T_DAMP_GROUND` (uncommitted).
+ground row (T0 += (T1 - T0)/4 per moist step); the fix is `ATM_T_DAMP_GROUND` (below, default 1 since `5d11a36`).
+
+## `ATM_T_DAMP_GROUND` -- the vertical Shapiro pass on t leaves the ground row alone (`5d11a36`, 2026-11-28), DEFAULT 1, =0 restores
+
+**This changes the default: every number in this file from before `5d11a36` belongs to the old branch.**
+Same change as ATHAD `c27ae39`. `cAtmosphereModel.cpp`, helper `damp_wiggles_t`, at both `damp_wiggles(t)` sites
+(set-up and moist block). The 1-2-1 de-checkerboard ran along i from the fluid floor, and with the clamped floor
+its update at the ground row is T0 += (T1 - T0)/4: every call pulled the ground a quarter of the way to the first
+air layer. The ground row is not an air cell -- it carries `MultiLayerRadiation`'s surface balance and
+`densities()` hangs the column and the surface pressure from it. With 1 the horizontal passes are unchanged
+(ground row included) and the vertical pass starts one row higher, so level `i_topography+1` is the clamped
+floor; same k, j, i order as the single call. `=0` makes the old single call, so it restores the old branch by
+construction (no byte check run). Measured on ATHAD_PERID (-1.30 K pole / -1.36 K equator per moist step, the column falling 4.5 K per 100
+iterations); **not measured on this model**.
+
+## `ATM_SFC_COUPLE` -- the ground with a heat capacity against the actual level-1 air (`fc5e5ee`, 2026-11-28), default 0 = off
+
+Same change as ATHAD `f9e9e5a`. `MultiLayerRadiation.h` (`sfc_couple_on`) and `apply_radiative_heating` in
+`cAtmosphereModel.cpp`. WHY: the ground had no working energy balance in the time loop. The Newton step solves
+the balance against the RADIATIVE-EQUILIBRIUM air (which `densities()` then overwrites), has no heat capacity,
+and the omega_rad = 0.05 blend keeps 5 % of it per call, so the ground relaxed on an iteration count, not on a
+time. With 1, in the time loop's call only (other callers of `run()` keep the Newton step):
+
+    ground   C dT_s/dt = SW + geo + Ldown - sigma T_s^4 - H,   H = c_H (T_s - T_1)
+             T_1 = the ACTUAL level-1 temperature as it entered; linearised backward Euler over
+             tau = dt L_atm/u_0 * ACCEL (stable for any ACCEL; ACCEL -> infinity is the Newton step
+             with the actual air)
+    level 1  + H dt L_atm/u_0 / (rho_1 cp_1 dz_1)   (real time, not accelerated)
+
+Both are written AFTER the blend, so the blend no longer touches the ground. `ATM_SFC_HEATCAP` [J/m2/K]
+default 2.1e8 (a 50 m water layer), `ATM_SFC_ACCEL` default 1. At ACCEL 1 the ground is practically constant
+over any affordable run (one iteration is ~0.03 s on `L_atm` here; +180 W/m2 moves it ~1e-8 K per iteration),
+so the ACCEL value is part of the decision. Prints its settings once. Not measured yet; next:
+`ATM_SFC_COUPLE=1` with `ATM_SFC_DIAG`.
 
 # Moved from README.md on 2026-11-26
 
