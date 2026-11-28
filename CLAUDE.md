@@ -632,8 +632,9 @@ air layer. The ground row is not an air cell -- it carries `MultiLayerRadiation`
 `densities()` hangs the column and the surface pressure from it. With 1 the horizontal passes are unchanged
 (ground row included) and the vertical pass starts one row higher, so level `i_topography+1` is the clamped
 floor; same k, j, i order as the single call. `=0` makes the old single call, so it restores the old branch by
-construction, and the byte check confirms it (2026-11-28, 2 it, 1 thread, every writer at 2, from
-scratch): HEAD with `ATM_T_DAMP_GROUND=0` against the binary of `6958f11` (before the knob), 13 / 13 output files
+construction, and the byte check confirms it (2026-11-28, 2 it, 1 thread, checkpoint 2, from scratch;
+`panorama_print` stayed 100, so the panorama / sphere / cloudview were NOT among the files compared --
+the 13 are the radial / zonal / longitudinal slices, the transfer and plot files and the CSVs): HEAD with `ATM_T_DAMP_GROUND=0` against the binary of `6958f11` (before the knob), 13 / 13 output files
 identical; HEAD at the default against the same binary 1 / 13, so the check sees the knob. Measured on ATHAD_PERID (-1.30 K pole / -1.36 K equator per moist step, the column falling 4.5 K per 100
 iterations); **not measured on this model**.
 
