@@ -20,6 +20,7 @@
 
 #include "cAtmosphereModel.h"
 #include "Utils.h"
+#include "SaturationH2O.h"
 
 using namespace std;
 using namespace AtomUtils;
@@ -103,6 +104,69 @@ namespace ParaViewAtm{
     }
 }
 /*
+ * FluidPhase (2026-11-28; user: "there are oceans in the family but I can't see them in Paraview, add a type of
+ * species ... that indicates the fluid phase and its location"). OUTPUT ONLY: computed from the state at each
+ * write, read by no routine. The ocean / melt of this family is a boundary condition on the ground row
+ * i = i_topography (= 0, invariant 1: no topography), never a field, so nothing in the output showed it.
+ * One categorical value per point, from the model's own water physics (SaturationH2O.h):
+ *   ground row (the surface, i == i_topography):
+ *     10  liquid-water ocean   T_TRIPLE <= T_s < T_crit and p_s > p_sat(T_s)
+ *     11  water ice            T_s < T_TRIPLE
+ *     12  silicate melt        no liquid water possible (T_s >= T_crit or p_s <= p_sat) and T_s >= T_solidus
+ *     13  solid rock           neither
+ *   air (i > i_topography):
+ *     0  vapour only           1  + liquid cloud      2  + ice / graupel cloud      3  + both (mixed)
+ *     4  supercritical         T >= T_crit (isSupercritical: no liquid can form; the cloud test is skipped)
+ *     5  condensate ON THE CAP cloud >= 0.99 cloud_cap or ice >= 0.99 cloud_cap (the per-field ceiling of
+ *                              SaturationAdjustment.h; takes precedence over 1-3). Not an ocean -- the densest
+ *                              cell is ~0.1 % liquid by volume -- but where condensate the model would otherwise
+ *                              hold is clipped (register row COND-CAP-COLUMN).
+ *   inside the ground (i < i_topography; never reached without topography): 13.
+ * Condensate counts above 1e-9 kg/kg. T_solidus = ATM_PHASE_T_SOLIDUS [K], default 1393 K (dry peridotite at
+ * low pressure, ~1120 C); an assumption, not a model constant -- nothing else reads it.
+ * In ParaView: Threshold FluidPhase 10..13 shows the surface and what it is; 4 the supercritical column.
+ * ATM_FLUID_PHASE=0 does not write the array (the files are then as before the field existed).
+ */
+static bool fluid_phase_on(){
+    static const bool v = [](){ const char* e = getenv("ATM_FLUID_PHASE"); return !(e && atoi(e) == 0); }();
+    return v;
+}
+static Array& fluid_phase_field(cAtmosphereModel& m){
+    static Array fp;
+    if(fp.im != m.im || fp.jm != m.jm || fp.km != m.km) fp.initArray(m.im, m.jm, m.km, 0.0);
+    static const double T_sol = [](){ const char* e = getenv("ATM_PHASE_T_SOLIDUS");
+                                      return (e && atof(e) > 0.0) ? atof(e) : 1393.0; }();
+    constexpr double q_min = 1.0e-9;
+    for(int j = 0; j < m.jm; j++)
+        for(int k = 0; k < m.km; k++){
+            const int ig = m.i_topography[j][k];
+            for(int i = 0; i < m.im; i++){
+                const double T = m.t.x[i][j][k] * m.t_0;               // K
+                const double p = m.p_stat.x[i][j][k];                  // hPa
+                double code;
+                if(i < ig) code = 13.0;
+                else if(i == ig){
+                    if(T < SaturationH2O::T_TRIPLE) code = 11.0;
+                    else {
+                        const double e = SaturationH2O::saturationPressure(T);   // NO_SATURATION above T_crit
+                        if(e != SaturationH2O::NO_SATURATION && e < p) code = 10.0;
+                        else code = (T >= T_sol) ? 12.0 : 13.0;
+                    }
+                }
+                else if(SaturationH2O::isSupercritical(T)) code = 4.0;
+                else {
+                    const bool liq = m.cloud.x[i][j][k] > q_min;
+                    const bool sol = m.ice.x[i][j][k] + m.gr.x[i][j][k] > q_min;
+                    const double cap = 0.99 * m.cloud_cap;
+                    if(m.cloud_cap > 0.0 && (m.cloud.x[i][j][k] >= cap || m.ice.x[i][j][k] >= cap)) code = 5.0;
+                    else code = (liq && sol) ? 3.0 : liq ? 1.0 : sol ? 2.0 : 0.0;
+                }
+                fp.x[i][j][k] = code;
+            }
+        }
+    return fp;
+}
+/*
  * 
 */
 void cAtmosphereModel::paraview_panorama_vts(string &Name_Bathymetry_File, int n){
@@ -153,6 +217,7 @@ void cAtmosphereModel::paraview_panorama_vts(string &Name_Bathymetry_File, int n
 
 
     dump_array("Topography", h, 1.0, Atmosphere_panorama_vts_File);
+    if(fluid_phase_on()) dump_array("FluidPhase", fluid_phase_field(*this), 1.0, Atmosphere_panorama_vts_File);
 
     dump_array("u-component", u, u_0, Atmosphere_panorama_vts_File);
     dump_array("v-component", v, u_0, Atmosphere_panorama_vts_File);
@@ -333,6 +398,7 @@ void cAtmosphereModel::paraview_sphere_vts(string &Name_Bathymetry_File, int n){
     };
     dump_("Temperature", t, t_0, -t_0);                             // deg C, as the panorama
     dump_("Bathymetry", h, 1.0, 0.0);
+    if(fluid_phase_on()) dump_("FluidPhase", fluid_phase_field(*this), 1.0, 0.0);
     dump_v("u-component", cx);                                      // Cartesian x, y, z in m/s
     dump_v("v-component", cy);
     dump_v("w-component", cz);
@@ -575,6 +641,7 @@ void cAtmosphereModel::paraview_vtk_radial(string &Name_Bathymetry_File,
     dump_radial_2d("Albedo", albedo, 1.0, Atmosphere_vtk_radial_File);
 
     dump_radial("Topography", h, 1.0, i_radial, Atmosphere_vtk_radial_File);
+    if(fluid_phase_on()) dump_radial("FluidPhase", fluid_phase_field(*this), 1.0, i_radial, Atmosphere_vtk_radial_File);
 
     dump_radial("WaterVapour", c, 1000.0, i_radial, Atmosphere_vtk_radial_File);
     dump_radial("CloudWater", cloud, 1e3, i_radial, Atmosphere_vtk_radial_File);
@@ -801,6 +868,7 @@ void cAtmosphereModel::paraview_vtk_zonal(string &Name_Bathymetry_File,
     dump_zonal("u-Component", u, u_0, k_zonal, Atmosphere_vtk_zonal_File);
     dump_zonal("v-Component", v, u_0, k_zonal, Atmosphere_vtk_zonal_File);
     dump_zonal("w-Component", w, u_0, k_zonal, Atmosphere_vtk_zonal_File);
+    if(fluid_phase_on()) dump_zonal("FluidPhase", fluid_phase_field(*this), 1.0, k_zonal, Atmosphere_vtk_zonal_File);
 
     double inv_u_0 = 1.0 / u_0;
 
@@ -1108,6 +1176,7 @@ void cAtmosphereModel::paraview_vtk_longal(string &Name_Bathymetry_File,
     dump_longal("u-Component", u, u_0, j_longal, Atmosphere_vtk_longal_File);
     dump_longal("v-Component", v, u_0, j_longal, Atmosphere_vtk_longal_File);
     dump_longal("w-Component", w, u_0, j_longal, Atmosphere_vtk_longal_File);
+    if(fluid_phase_on()) dump_longal("FluidPhase", fluid_phase_field(*this), 1.0, j_longal, Atmosphere_vtk_longal_File);
 
     buf << "SCALARS Temperature float " << 1 << '\n'
         << "LOOKUP_TABLE default\n";

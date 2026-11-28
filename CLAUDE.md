@@ -658,6 +658,34 @@ over any affordable run (one iteration is ~0.03 s on `L_atm` here; +180 W/m2 mov
 so the ACCEL value is part of the decision. Prints its settings once. Not measured yet; next:
 `ATM_SFC_COUPLE=1` with `ATM_SFC_DIAG`.
 
+## `FluidPhase` -- which fluid is where, ocean included (2026-11-28), output only, `ATM_FLUID_PHASE` default 1 (=0: not written)
+
+WHY: this family's ocean (or melt) is a boundary condition on the ground row i = i_topography = 0 (invariant 1:
+no topography, no land), never a field, so ParaView showed nothing of it. `FluidPhase` is one categorical value
+per point, computed from the state at each write (`Paraview_Atm.cpp`, `fluid_phase_field`), read by no routine,
+with the model's own water physics (`SaturationH2O.h`):
+
+| code | where | meaning |
+|---|---|---|
+| 10 | ground row | liquid-water ocean: T_TRIPLE <= T_s < T_crit and p_s > p_sat(T_s) |
+| 11 | ground row | water ice: T_s < T_TRIPLE |
+| 12 | ground row | silicate melt (magma ocean): no liquid water possible and T_s >= T_solidus |
+| 13 | ground row (and inside the ground) | solid rock |
+| 0 / 1 / 2 / 3 | air | vapour only / + liquid cloud / + ice or graupel / + both (condensate > 1e-9 kg/kg) |
+| 4 | air | supercritical: T >= T_crit (`isSupercritical`; no liquid can form, the cloud test is skipped) |
+| 5 | air | condensate ON THE CAP: cloud or ice >= 0.99 `cloud_cap` (register row COND-CAP-COLUMN) |
+
+`ATM_PHASE_T_SOLIDUS` [K], default 1393 (dry peridotite at low pressure, ~1120 C) -- an assumption that only
+this field reads. Written in the panorama `.vts` (all i), the sphere `.vts` (the ground row is the innermost
+shell) and the radial (at its level), zonal and longitudinal `.vtk`; not in the cloudview. In ParaView: Threshold
+FluidPhase 10..13 on the sphere shows the surface and what it is, 4 the supercritical column, 5 the capped cells.
+Not an ocean in the air: the densest cell anywhere in the family is ~0.1 % liquid by volume (cloud_cap 0.05).
+
+**Measured (2 it from scratch, 1 thread, checkpoint 2, panorama_print 2):** surface liquid ocean in all 65 341 points; air mostly liquid cloud (1 917 343 points), **45 414 cells ON THE CAP at levels 8-11 already at iteration 2** (register row COND-CAP-COLUMN); nothing supercritical.
+Byte check (same run): `ATM_FLUID_PHASE=0` against the binary before the field, 16 / 16 output files identical
+(panorama, sphere and cloudview included); at the default 16 / 16 identical once the `FluidPhase` array is
+removed, 8 files carry it. Scripts and the C arm's output: `python/fluidphase_2026-11-28/`.
+
 # Moved from README.md on 2026-11-26
 
 The sections below were the technical part of README.md and were moved here verbatim (user: "CLAUDE.md everywhere"); the README keeps each heading with a one-sentence summary.
