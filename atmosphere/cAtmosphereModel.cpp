@@ -1398,7 +1398,12 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
             for (int j = 0; j < jm; j++)
                 for (int k = 0; k < km; k++)
                     t_backup[idx++] = t.x[i][j][k];             // save dynamical t
+        // ATM_SFC_COUPLE (default 0; MultiLayerRadiation.h sfc_couple_on): this call, and only this one,
+        // integrates the ground with a heat capacity against the actual level-1 air.
+        const bool sfc_cpl = MultiLayerRadiation::sfc_couple_on();
+        MultiLayerRadiation::sfc_coupled_call() = sfc_cpl;
         MultiLayerRadiation(*this).run();                       // t := radiative equilibrium
+        MultiLayerRadiation::sfc_coupled_call() = false;
         idx = 0;
         for (int i = 0; i < im; i++)
             for (int j = 0; j < jm; j++)
@@ -1406,6 +1411,25 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                     const double re = t.x[i][j][k];
                     t.x[i][j][k] = t_backup[idx++] * (1.0 - omega_rad) + re * omega_rad;
                 }
+        if (sfc_cpl) {
+            // After the blend: the ground takes its integrated value, level 1 the flux it received.
+            static bool told = false;
+            if (!told) {
+                told = true;
+                std::cout << "      AGCM: ATM_SFC_COUPLE = 1: ground C dT/dt with the actual level-1 air, C = "
+                          << MultiLayerRadiation::sfc_heatcap() << " J/m2/K, ACCEL = "
+                          << MultiLayerRadiation::sfc_accel() << ", dt = " << dt * L_atm / u_0
+                          << " s per iteration (dt L_atm/u_0)" << std::endl;
+            }
+            const std::vector<double>& Ts  = MultiLayerRadiation::sfc_Ts();
+            const std::vector<double>& dT1 = MultiLayerRadiation::sfc_dT1();
+            #pragma omp parallel for collapse(2) schedule(static)
+            for (int j = 0; j < jm; j++)
+                for (int k = 0; k < km; k++) {
+                    t.x[0][j][k]  = Ts[(size_t)j * km + k] / t_0;
+                    t.x[1][j][k] += dT1[(size_t)j * km + k] / t_0;
+                }
+        }
     };
 
     // Option (ii) helper: t_eq += MLR(current CO2) - MLR(reference 280 ppm). Two MLR solves on

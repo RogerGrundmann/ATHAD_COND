@@ -56,6 +56,46 @@ public:
         : m(model)
     {}
 
+    // ATM_SFC_COUPLE (default 0 = the per-call Newton step below, byte-identical; 2026-11-27, user: "the
+    // coupled ground-air flux", with "Physical + speed-up knob" and "L_atm" as the time unit).
+    //
+    // WHY. The ground had no working energy balance in the time loop. The Newton step below solves the
+    // balance against the RADIATIVE-EQUILIBRIUM air (which densities() then overwrites), has no heat
+    // capacity, and apply_radiative_heating keeps 5 % of it per call, so the ground relaxed on an iteration
+    // count, not on a time. The only exchange with the REAL air was the radial damp_wiggles(t) at the ground
+    // row (removed by ATM_T_DAMP_GROUND): on ATHAD_PERID it cooled the ground (air above colder), on ATHAD
+    // it warmed it (level 1 heated above the ground after the diffusion ramp), in neither case conserving
+    // energy (ATM_SFC_DIAG + stage probes, ATHAD_PERID/CLAUDE.md, 2026-11-27).
+    //
+    // WHAT. With 1, inside apply_radiative_heating (radiation_mode 2, the time loop) only:
+    //   ground   C dT_s/dt = SW + geo + Ldown - sigma T_s^4 - H,   H = c_H (T_s - T_1),  T_1 = the ACTUAL
+    //            level-1 temperature as it entered; linearised backward Euler over tau = dt L_atm/u_0 * ACCEL
+    //            (stable for any ACCEL; ACCEL -> infinity is the Newton step with the actual air);
+    //   level 1  + H dt L_atm/u_0 / (rho_1 cp_1 dz_1)   (real time, not accelerated);
+    //   both written AFTER the omega_rad blend, so the blend no longer touches the ground.
+    // ATM_SFC_HEATCAP [J/m2/K] default 2.1e8 (a 50 m water layer), ATM_SFC_ACCEL default 1. At ACCEL 1 the
+    // ground is practically constant over any affordable run: one iteration is 0.03 s (COND, PERID) to
+    // 0.2 s (ATHAD) on L_atm (CLAUDE.md item 47), so +180 W/m2 moves it ~1e-8 K per iteration.
+    // Other callers of run() (diagnostic refreshes that restore t) keep the Newton step.
+    static bool sfc_couple_on() {
+        static const bool v = [](){ const char* e = getenv("ATM_SFC_COUPLE");
+                                    return e && atoi(e) != 0; }();
+        return v;
+    }
+    static bool& sfc_coupled_call() { static bool b = false; return b; }   // set by apply_radiative_heating
+    static std::vector<double>& sfc_Ts()  { static std::vector<double> v; return v; }   // [K], j*km + k
+    static std::vector<double>& sfc_dT1() { static std::vector<double> v; return v; }   // [K], j*km + k
+    static double sfc_heatcap() {
+        static const double v = [](){ const char* e = getenv("ATM_SFC_HEATCAP");
+                                      return (e && atof(e) > 0.0) ? atof(e) : 2.1e8; }();
+        return v;
+    }
+    static double sfc_accel() {
+        static const double v = [](){ const char* e = getenv("ATM_SFC_ACCEL");
+                                      return (e && atof(e) > 0.0) ? atof(e) : 1.0; }();
+        return v;
+    }
+
     void run()
     {
         using namespace std;
@@ -81,6 +121,14 @@ public:
         struct SfcRec { double Ts0, Ts, Ta_ad, Ta_re, SW, geo, Ld_re, Ld_ad, sT4, H_re, H_ad,
                         net_re, net_ad; bool set = false; };
         SfcRec sfc_rec[4];
+
+        // ATM_SFC_COUPLE: active only on the call apply_radiative_heating flags.
+        const bool   sfc_couple = sfc_couple_on() && sfc_coupled_call();
+        const double dt_phys    = m.dt * m.L_atm / m.u_0;                  // [s] per iteration (L_atm)
+        if (sfc_couple) {
+            sfc_Ts().assign((size_t)m.jm * m.km, 0.0);
+            sfc_dT1().assign((size_t)m.jm * m.km, 0.0);
+        }
 
         // ---- latitude profiles (computed once; read-only in the parallel loop) ----
 
@@ -152,6 +200,7 @@ public:
                 for (int i = i_mount; i <= i_trop; i++)
                     T[i] = m.t.x[i][j][k] * m.t_0;
                 if (sfc_slot >= 0 && k == 0) T_in = T;   // ATM_SFC_DIAG: the air as it entered
+                const double T_air_act = T[i_mount + 1]; // ATM_SFC_COUPLE: the actual level-1 air
 
                 // ATHAD: layer optical depth from COLUMN MASS with pressure broadening.
                 //
@@ -497,9 +546,28 @@ public:
                 // modern Earth's 0.09 W/m2, and at 1500 K this term is plausibly comparable to
                 // the absorbed solar — omitting it would let the surface cool as if it were
                 // rock. It enters the balance exactly as absorbed shortwave does.
-                const double T_s    = (SW_abs + m.geothermal_flux + L_down
-                                       - m.sigma * pow(T_s0, 4.0)
-                                       + dsigT4 * T_s0 + c_H * T_air1) / (dsigT4 + c_H);
+                double T_s;
+                if (!sfc_couple) {
+                    T_s = (SW_abs + m.geothermal_flux + L_down
+                           - m.sigma * pow(T_s0, 4.0)
+                           + dsigT4 * T_s0 + c_H * T_air1) / (dsigT4 + c_H);
+                } else {
+                    // ATM_SFC_COUPLE (see sfc_couple_on): heat capacity, the actual air, a time.
+                    const double H   = c_H * (T_s0 - T_air_act);
+                    const double F   = SW_abs + m.geothermal_flux + L_down
+                                     - m.sigma * pow(T_s0, 4.0) - H;
+                    const double tau = dt_phys * sfc_accel();
+                    T_s = T_s0 + tau * F / (sfc_heatcap() + tau * (dsigT4 + c_H));
+                    const int    m1   = i_mount + 1;
+                    const double rho1 = m.r_humid.x[m1][j][k];
+                    const double cp1  = AtmMixture::cp_of(m.c.x[m1][j][k], m.co2.x[m1][j][k],
+                                                          T_air_act, m.m_comp.M_bg);
+                    const double dz1  = 0.5 * (m.get_layer_height(m1 + 1) - m.get_layer_height(i_mount));
+                    const double cap1 = rho1 * cp1 * dz1;                  // [J/m2/K]
+                    sfc_Ts()[(size_t)j * m.km + k]  = T_s;
+                    sfc_dT1()[(size_t)j * m.km + k] = (cap1 > 0.0 && AtomUtils::is_finite_safe(cap1))
+                                                    ? H * dt_phys / cap1 : 0.0;
+                }
                 m.t.x[i_mount][j][k] = T_s / m.t_0;
 
                 // ATM_SFC_DIAG (print-only): record the balance; the adiabat's down-welling
