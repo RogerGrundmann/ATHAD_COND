@@ -32,6 +32,28 @@
 #include "TurbulenceAtm.h"
 #include "MultiLayerRadiation.h"
 
+// ATM_T_DAMP_GROUND (default 1; 0 restores the old call, byte-identical; 2026-11-27, user: "apply fix 1 to all
+// three and measure it"). The 1-2-1 de-checkerboard of t (set-up and moist block) ran along i from the
+// fluid floor, and with the clamped floor its update at the ground row is T0 += (T1 - T0)/4: every call
+// pulled the ground a quarter of the way to the first air layer. The ground row is not an air cell -- it
+// carries the surface energy balance of MultiLayerRadiation, and densities() hangs the whole column and
+// the surface pressure from it -- so on ATHAD_PERID (12 bar, dry adiabat ~5 K across the first layer)
+// it cost -1.30 K pole / -1.36 K equator per moist step against +0.07 / +0.36 K the radiative blend gave
+// back (ATM_SFC_DIAG + a stage probe, scratch only): the ground and with it the column fell 4.5 K per
+// 100 iterations. With 1 the horizontal passes are unchanged (ground row included) and the vertical pass
+// starts one row higher, so level i_topography+1 is the clamped floor and the ground is not touched.
+// Same k, j, i order as the single call.
+static void damp_wiggles_t(Array& t, const std::vector<std::vector<int>>& i_topography)
+{
+    static const bool keep_ground = [](){ const char* e = getenv("ATM_T_DAMP_GROUND");
+                                          return !(e && atoi(e) == 0); }();
+    if (!keep_ground) { AtomUtils::damp_wiggles(t, &i_topography, true, true, true); return; }
+    AtomUtils::damp_wiggles(t, &i_topography, false, true, true);
+    std::vector<std::vector<int>> i_air(i_topography);
+    for (auto& row : i_air) for (auto& v : row) v += 1;
+    AtomUtils::damp_wiggles(t, &i_air, true, false, false);
+}
+
 
 using namespace std;
 using namespace tinyxml2;
@@ -1030,7 +1052,7 @@ void cAtmosphereModel::RunTimeSlice(int Ma){
 //    BC_Atm(*this).coastalCurrents();
 
     initTemperatureData(Ma);                                            // initialization of temperature, hydrostatic pressure and density of dry air, reconstruction of potential surface values
-    AtomUtils::damp_wiggles(t, &i_topography, true, true, true);
+    damp_wiggles_t(t, i_topography);   // ATM_T_DAMP_GROUND (see the helper)
 
     // Snapshot the lid temperature (i=im-1) from the IC. bcRadius pins t at the lid
     // to this fixed reference so the isothermal stratospheric top stays constant
@@ -1738,7 +1760,7 @@ cout << endl << endl << endl << "      AGCM: run_3D_loop atm ...................
                 // at the steep Pamir surface (t[0] sampled by densities() on its diverging odd
                 // branch) run away to 53 K and crash the barometric formula. Mirror the scalar
                 // treatment on t to close the asymmetry. See [[project_upper_velocity_secular_growth]].
-                AtomUtils::damp_wiggles(t,     &i_topography, true, true, true);
+                damp_wiggles_t(t, i_topography);   // ATM_T_DAMP_GROUND: the ground row is not in the vertical pass
                 AtomUtils::damp_wiggles(ice,   &i_topography, true, true, true);
                 AtomUtils::damp_wiggles(c,     &i_topography, true, true, true);
                 AtomUtils::damp_wiggles(cloud, &i_topography, true, true, true);
