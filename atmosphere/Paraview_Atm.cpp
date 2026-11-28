@@ -21,6 +21,7 @@
 #include "cAtmosphereModel.h"
 #include "Utils.h"
 #include "SaturationH2O.h"
+#include "MixtureAtm.h"
 
 using namespace std;
 using namespace AtomUtils;
@@ -167,6 +168,26 @@ static Array& fluid_phase_field(cAtmosphereModel& m){
     return fp;
 }
 /*
+ * The eight species in the 3D files (2026-11-28; user: "except CO2 and H2O the other species are ... constant and
+ * not represented in the RK scheme ... are they so invisible"). OUTPUT ONLY. The radial / zonal / longitudinal
+ * slices have written all eight since README item 61 (`THE EIGHT SPECIES, ALL FROM split()` below); the panorama and
+ * the sphere had only WaterVapour and the raw CO2 tracer, so N2, CH4, NH3, H2, CO, SO2 were invisible in 3D. Same
+ * names, same source, same unit as the slices: AtmMixture::split() with the cell's condensate, H2O = q_v, CO2 = q_c
+ * (carrier-renormalised), the rest q_b * f_bg[n] -- MASS FRACTIONS, dimensionless. The six background gases are not
+ * prognostic: they are a fixed share of the background and move only with q_b, i.e. with the water and the CO2.
+ * ATM_SPECIES_3D=0 does not write them.
+ */
+static bool species_3d_on(){
+    static const bool v = [](){ const char* e = getenv("ATM_SPECIES_3D"); return !(e && atoi(e) == 0); }();
+    return v;
+}
+static double species_q(cAtmosphereModel& m, int n, int i, int j, int k){
+    double q_v, q_c, q_b;
+    const double q_l = m.cloud.x[i][j][k] + m.ice.x[i][j][k] + m.gr.x[i][j][k];
+    AtmMixture::split(m.c.x[i][j][k], m.co2.x[i][j][k], q_v, q_c, q_b, q_l);
+    return (n == 0) ? q_v : (n == 1) ? q_c : q_b * m.m_comp.f_bg[n - 2];
+}
+/*
  * 
 */
 void cAtmosphereModel::paraview_panorama_vts(string &Name_Bathymetry_File, int n){
@@ -266,6 +287,16 @@ void cAtmosphereModel::paraview_panorama_vts(string &Name_Bathymetry_File, int n
 //    dump_array("r_humid", r_humid, 1.0, Atmosphere_panorama_vts_File);
 
     dump_array("CO2-Concentration", co2, co2_0, Atmosphere_panorama_vts_File);
+    if(species_3d_on())                                                 // ATM_SPECIES_3D: the eight, as in the slices
+        for(int n = 0; n < 8; n++){
+            Atmosphere_panorama_vts_File << "    <DataArray type=\"Float32\" Name=\"" << AtmMixture::SPECIES_NAMES()[n]
+                                         << "\" format=\"ascii\">\n";
+            for(int k = 0; k < km; k++)
+                for(int j = 0; j < jm; j++)
+                    for(int i = 0; i < im; i++)
+                        Atmosphere_panorama_vts_File << safe_val(species_q(*this, n, i, j, k)) << "\n";
+            Atmosphere_panorama_vts_File << "    </DataArray>\n";
+        }
 //    dump_array("Q_Latent", Q_Latent, 1.0, Atmosphere_panorama_vts_File);
 //    dump_array("Q_Radiation", radiation, 1.0, Atmosphere_panorama_vts_File);
 //    dump_array("Q_Sensible", Q_Sensible, 1.0, Atmosphere_panorama_vts_File);
@@ -412,6 +443,15 @@ void cAtmosphereModel::paraview_sphere_vts(string &Name_Bathymetry_File, int n){
     dump_("Precipitation", Precipitation, 8.64e4, 0.0);            // mm/d
     dump_("PrecipitationRain", P_rain, 8.64e4, 0.0);
     dump_("PrecipitationSnow", P_snow, 8.64e4, 0.0);
+    if(species_3d_on())                                                 // ATM_SPECIES_3D: the eight, as in the slices
+        for(int n = 0; n < 8; n++){
+            f << "    <DataArray type=\"Float32\" Name=\"" << AtmMixture::SPECIES_NAMES()[n] << "\" format=\"ascii\">\n";
+            for(int k = 0; k < km; k++)
+                for(int j = j0; j < j1; j++)
+                    for(int i = 0; i < im; i++)
+                        f << safe_val(species_q(*this, n, i, j, k)) << '\n';
+            f << "    </DataArray>\n";
+        }
 
     buf << "   </PointData>\n\n"
         << "   <Points>\n\n"
